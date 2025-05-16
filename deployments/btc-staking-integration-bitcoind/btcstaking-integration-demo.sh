@@ -21,7 +21,7 @@ echo "Registering the consumer"
 docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
 
 ###############################
-#  Create FP for Babylon     #
+#  Create FP for Babylon      #
 ###############################
 
 echo ""
@@ -73,24 +73,6 @@ docker restart consumer-fp
 echo "Consumer chain finality provider restarted"
 
 #################################
-# Ensure finality providers are #
-#  committing public randomness #
-#################################
-
-echo ""
-echo "Ensuring all finality providers have committed public randomness..."
-while true; do
-    pr_commit_info=$(docker exec babylondnode0 /bin/sh -c "babylond query wasm contract-state smart $finalityContractAddr '{\"last_pub_rand_commit\":{\"btc_pk_hex\":\"$consumer_btc_pk\"}}' -o json")
-    if [[ "$(echo "$pr_commit_info" | jq '.data')" == *"null"* ]]; then
-        echo "The finality provider $consumer_btc_pk hasn't committed any public randomness yet"
-        sleep 10
-    else
-        echo "The finality provider $consumer_btc_pk has committed public randomness"
-        break
-    fi
-done
-
-#################################
 #  Multi-stake BTC to finality #
 #  providers on Babylon and    #
 #  Consumer chain              #
@@ -123,6 +105,24 @@ while true; do
         break
     else
         sleep 10
+    fi
+done
+
+#################################
+# Ensure finality providers are #
+#  committing public randomness #
+#################################
+
+echo ""
+echo "Ensuring all finality providers have committed public randomness..."
+while true; do
+    pr_commit_info=$(docker exec babylondnode0 /bin/sh -c "babylond query wasm contract-state smart $finalityContractAddr '{\"last_pub_rand_commit\":{\"btc_pk_hex\":\"$consumer_btc_pk\"}}' -o json")
+    if [[ "$(echo "$pr_commit_info" | jq '.data')" == *"null"* ]]; then
+        echo "The finality provider $consumer_btc_pk hasn't committed any public randomness yet"
+        sleep 10
+    else
+        echo "The finality provider $consumer_btc_pk has committed public randomness"
+        break
     fi
 done
 
