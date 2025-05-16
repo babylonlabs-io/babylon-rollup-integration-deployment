@@ -9,6 +9,18 @@ for container in babylondnode0; do
     '
 done
 
+echo "Waiting for first block..."
+while true; do
+    BLOCK_HEIGHT=$(docker exec babylondnode0 /bin/babylond status | jq -r '.sync_info.latest_block_height')
+    if [ "$BLOCK_HEIGHT" -ge 1 ]; then
+        echo "Block height $BLOCK_HEIGHT reached"
+        break
+    else
+        echo "Waiting for block height to reach 1... Current height: $BLOCK_HEIGHT"
+    fi
+    sleep 1
+done
+
 echo "Creating keyrings and sending funds to Babylon Node Consumers"
 
 [[ "$(uname)" == "Linux" ]] && chown -R 1138:1138 .testnets/eotsmanager
