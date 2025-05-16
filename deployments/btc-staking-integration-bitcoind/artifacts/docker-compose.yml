@@ -227,21 +227,6 @@ services:
       - covenant-signer
     restart: unless-stopped
 
-  ibcsim-bcd:
-    container_name: ibcsim-bcd
-    image: babylonlabs-io/ibcsim-bcd
-    ports:
-      - "5183:5183"
-    volumes:
-      - ../.testnets:/data:Z
-    networks:
-      localnet:
-        ipv4_address: 192.168.10.18
-    depends_on:
-      - babylondnode0
-      - babylondnode1
-    restart: unless-stopped
-
 networks:
   localnet:
     driver: bridge
