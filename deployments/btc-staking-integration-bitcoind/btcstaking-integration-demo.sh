@@ -68,26 +68,21 @@ echo "Babylon finality provider restarted"
 ###############################
 
 echo ""
-echo "Creating a consumer chain finality provider"
 consumer_btc_pk=$(docker exec consumer-eotsmanager /bin/sh -c "
     /bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client "0.0.0.0:15813" --output=json | jq -r '.pubkey_hex'
 ")
+echo "Consumer finality provider EOTS public key: $consumer_btc_pk"
+
 docker exec consumer-fp /bin/sh -c "
     /bin/fpd cfp --key-name finality-provider \
         --chain-id $CONSUMER_ID \
         --eots-pk $consumer_btc_pk \
         --commission-rate 0.05 \
-        --moniker \"Consumer finality Provider\" | head -n -1 | jq -r .btc_pk_hex
+        --moniker \"Consumer finality Provider\"
 "
 
 echo "Created 1 consumer chain finality provider"
-echo "BTC PK of consumer chain finality provider: $btcPk"
-
-# Restart the finality provider containers so that key creation command above
-# takes effect and finality provider is start communication with the chain.
-echo "Restarting consumer chain finality provider..."
-docker restart consumer-fp
-echo "Consumer chain finality provider restarted"
+echo "BTC PK of consumer chain finality provider: $consumer_btc_pk"
 
 #################################
 #  Multi-stake BTC to finality  #
@@ -101,7 +96,7 @@ sleep 10
 # Get the available BTC addresses for delegations
 delAddrs=($(docker exec btc-staker /bin/sh -c '/bin/stakercli dn list-outputs | jq -r ".outputs[].address" | sort | uniq'))
 stakingTime=10000
-echo "Delegating 1 million Satoshis from BTC address ${delAddrs[i]} to Finality Provider with CZ finality provider $consumer_btc_pk and Babylon finality provider $bbn_btc_pk for $stakingTime BTC blocks"
+echo "Delegating 1 million Satoshis from BTC address ${delAddrs[i]} to Finality Provider with consumer finality provider $consumer_btc_pk and Babylon finality provider $bbn_btc_pk for $stakingTime BTC blocks"
 
 btcTxHash=$(docker exec btc-staker /bin/sh -c \
     "/bin/stakercli dn stake --staker-address ${delAddrs[i]} --staking-amount 1000000 --finality-providers-pks $bbn_btc_pk --finality-providers-pks $consumer_btc_pk --staking-time $stakingTime | jq -r '.tx_hash'")
@@ -126,9 +121,14 @@ while true; do
 done
 
 #################################
-# Ensure finality providers are #
-#  committing public randomness #
+# Commit public randomness      #
 #################################
+
+echo ""
+echo "Let consumer finality provider commit public randomness..."
+docker exec consumer-fp /bin/sh -c "
+    /bin/fpd unsafe-commit-pubrand $consumer_btc_pk 10100 --start-height 10000
+"
 
 echo ""
 echo "Ensuring all finality providers have committed public randomness..."
