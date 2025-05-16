@@ -169,7 +169,6 @@ services:
     depends_on:
       - babylondnode0
       - consumer-eotsmanager
-      - ibcsim-bcd
     restart: unless-stopped
 
   eotsmanager:

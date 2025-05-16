@@ -4,9 +4,6 @@ GIT_TOPLEVEL := $(shell git rev-parse --show-toplevel)
 build-bitcoindsim:
 	$(MAKE) -C $(GIT_TOPLEVEL)/contrib/images bitcoindsim
 
-build-ibcsim-bcd:
-	$(MAKE) -C $(GIT_TOPLEVEL)/contrib/images ibcsim-bcd
-
 build-babylond:
 	$(MAKE) -C $(GIT_TOPLEVEL)/babylon/contrib/images babylond
 
@@ -25,7 +22,7 @@ build-covenant-emulator:
 build-covenant-signer:
 	$(MAKE) -C $(GIT_TOPLEVEL)/covenant-emulator/covenant-signer build-docker
 
-build-deployment-btc-staking-integration-bitcoind: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator build-ibcsim-bcd
+build-deployment-btc-staking-integration-bitcoind: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator
 
 start-deployment-btc-staking-integration-bitcoind: stop-deployment-btc-staking-integration-bitcoind build-deployment-btc-staking-integration-bitcoind
 	./pre-deployment.sh

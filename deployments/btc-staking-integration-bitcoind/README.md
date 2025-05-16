@@ -12,21 +12,13 @@ It showcases how the Consumer chain integrates with Babylon for BTC staking.
 3. **Babylon Finality Provider**: A finality provider on the Babylon chain.
 4. **BTC Staker**: A BTC staker that re-stakes to the Babylon and Consumer
    finality provider.
-5. **Consumer Chain**: A chain that is integrated with Babylon for BTC staking.
-6. **Babylon Contracts**: Smart contracts on the Consumer chain.
-7. **Consumer chain finality provider**: A finality provider on the Consumer
+5. **Consumer chain finality provider**: A finality provider on the Consumer
    chain.
+<!-- 6. TODO -->
 
 ## User stories covered
 
-1. A Consumer chain creates an IBC channel with the Babylon chain to start the
-   integration.
-2. A Babylon finality provider registers to the Babylon chain.
-3. A Consumer finality provider registers to the Consumer chain.
-4. A BTC staker re-stakes BTC to the Babylon and Consumer finality providers.
-5. The Consumer finality provider commits public randomness and submits finality
-   signatures to the Consumer chain.
-6. BTC staking finalises blocks of the Consumer chain.
+<!-- 6. TODO -->
 
 ## Usage
 
@@ -41,7 +33,7 @@ This command will:
 
 - Stop any existing deployment.
 - Build all necessary components (babylond, bitcoindsim, vigilante, btc-staker,
-    finality-provider, covenant-emulator, and ibcsim-bcd).
+    finality-provider, covenant-emulator).
 - Run the pre-deployment setup.
 - Start the Docker containers.
 - Run the post-deployment setup.

@@ -15,10 +15,6 @@ ibcsim-gaia:
 	docker build --tag babylonlabs-io/ibcsim-gaia -f ibcsim-gaia/Dockerfile \
 		$(shell git rev-parse --show-toplevel)/contrib/images/ibcsim-gaia
 
-ibcsim-bcd:
-	docker build --tag babylonlabs-io/ibcsim-bcd -f ibcsim-bcd/Dockerfile \
-		$(shell git rev-parse --show-toplevel)/contrib/images/ibcsim-bcd
-
 btcdsim-rmi:
 	docker rmi babylonlabs-io/btcdsim 2>/dev/null; true
 
@@ -28,7 +24,4 @@ bitcoindsim-rmi:
 ibcsim-gaia-rmi:
 	docker rmi babylonlabs-io/ibcsim-gaia 2>/dev/null; true
 
-ibcsim-bcd-rmi:
-	docker rmi babylonlabs-io/ibcsim-bcd 2>/dev/null; true
-
-.PHONY: all btcdsim btcdsim-rmi bitcoindsim bitcoindsim-rmi ibcsim-gaia ibcsim-gaia-rmi ibcsim-bcd ibcsim-bcd-rmi
+.PHONY: all btcdsim btcdsim-rmi bitcoindsim bitcoindsim-rmi ibcsim-gaia ibcsim-gaia-rmi

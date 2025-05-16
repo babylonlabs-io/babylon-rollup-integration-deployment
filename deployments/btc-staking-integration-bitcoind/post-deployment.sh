@@ -3,7 +3,7 @@
 echo "Installing dependencies"
 
 # Install jq in both containers
-for container in babylondnode0 ibcsim-bcd; do
+for container in babylondnode0; do
     docker exec $container /bin/sh -c '
         apt-get update && apt-get install -y jq
     '
@@ -41,16 +41,15 @@ cp -R .testnets/node0/babylond/.tmpdir/keyring-test/* .testnets/finality-provide
 
 sleep 7
 echo "fund finality provider account on Babylon consumer daemon"
-docker exec ibcsim-bcd /bin/sh -c '
-    FP_CONSUMER_ADDR=$(bcd --home /data/bcd/.tmpdir keys add \
+docker exec babylondnode0 /bin/sh -c '
+    FP_CONSUMER_ADDR=$(/bin/babylond --home /babylondhome/.tmpdir keys add \
         consumer-fp --output json --keyring-backend test | jq -r .address) && \
-    bcd --home /data/bcd/bcd-test tx bank send user \
-        ${FP_CONSUMER_ADDR} 100000000ustake --fees 600000ustake -y \
-        --chain-id bcd-test --keyring-backend test
+    /bin/babylond --home /babylondhome tx bank send test-spending-key \
+        ${FP_CONSUMER_ADDR} 100000000ubbn --fees 600000ubbn -y \
+        --chain-id chain-test --keyring-backend test
 '
 mkdir -p .testnets/consumer-fp/keyring-test
 cp -R .testnets/node0/babylond/.tmpdir/keyring-test/* .testnets/consumer-fp/keyring-test
-cp -R .testnets/bcd/.tmpdir/keyring-test/* .testnets/consumer-fp/keyring-test
 [[ "$(uname)" == "Linux" ]] && chown -R 1138:1138 .testnets/consumer-fp
 
 sleep 7
