@@ -1,6 +1,9 @@
 #!/bin/bash
 
 BBN_CHAIN_ID="chain-test"
+CONSUMER_ID="consumer-id"
+
+admin=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json | jq -r '.address'")
 
 ###############################
 # Upload and instantiate the  #
@@ -8,17 +11,31 @@ BBN_CHAIN_ID="chain-test"
 #         Babylon             #
 ###############################
 
-# TODO: upload and instantiate the finality contract
-# TODO: set value for $finalityContractAddr
+sleep 5
+
+echo "Storing finality contract..."
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm store /contracts/op_finality_gadget.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.3 --fees 1000000ubbn -y"
+
+sleep 5
+
+echo "Instantiating finality contract..."
+INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"consumer_id\":\"$CONSUMER_ID\",\"is_enabled\":true}"
+echo "INSTANTIATE_MSG_JSON: $INSTANTIATE_MSG_JSON"
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn --label 'finality' --admin $admin --from test-spending-key -y"
+
+sleep 5
+
+# Extract contract address
+finalityContractAddr=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q wasm list-contracts-by-code 1 --output json | jq -r '.contracts[0]'")
+
+echo "Finality contract instantiated at: $finalityContractAddr"
 
 ###############################
 #    Register the consumer    #
 ###############################
 
-# TODO: value for $CONSUMER_ID
-
 echo "Registering the consumer"
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
 
 ###############################
 #  Create FP for Babylon      #
@@ -73,9 +90,9 @@ docker restart consumer-fp
 echo "Consumer chain finality provider restarted"
 
 #################################
-#  Multi-stake BTC to finality #
-#  providers on Babylon and    #
-#  Consumer chain              #
+#  Multi-stake BTC to finality  #
+#  providers on Babylon and     #
+#  Consumer chain               #
 #################################
 
 echo ""

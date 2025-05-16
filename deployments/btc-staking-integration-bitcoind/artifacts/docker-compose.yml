@@ -15,6 +15,7 @@ services:
       - "2345:2345"
     volumes:
       - ../.testnets/node0/babylond:/babylondhome:Z
+      - ../.testnets/node0/contracts:/contracts:Z
     networks:
       localnet:
         ipv4_address: 192.168.10.2
