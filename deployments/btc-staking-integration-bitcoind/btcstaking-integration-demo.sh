@@ -124,11 +124,8 @@ done
 # Commit public randomness      #
 #################################
 
-echo ""
-echo "Let consumer finality provider commit public randomness..."
-docker exec consumer-fp /bin/sh -c "
-    /bin/fpd unsafe-commit-pubrand $consumer_btc_pk 10100 --start-height 10000
-"
+# TODO: mock commit pub rand using unsafe-commit-pubrand command
+# fpd will lock DB when running, so need to find a way to make unsafe-commit-pubrand command work
 
 echo ""
 echo "Ensuring all finality providers have committed public randomness..."
@@ -147,6 +144,9 @@ done
 #  Ensure finality providers are  #
 #  submitting finality signatures #
 ###################################
+
+# TODO: mock add finality signature using unsafe-add-finality-sig command
+# fpd will lock DB when running, so need to find a way to make unsafe-add-finality-signature command work
 
 echo ""
 echo "Ensuring all finality providers have submitted finality signatures..."
