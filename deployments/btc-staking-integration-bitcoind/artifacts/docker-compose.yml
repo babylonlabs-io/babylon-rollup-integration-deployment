@@ -15,6 +15,7 @@ services:
       - "2345:2345"
     volumes:
       - ../.testnets/node0/babylond:/babylondhome:Z
+      - ../.testnets/node0/contracts:/contracts:Z
     networks:
       localnet:
         ipv4_address: 192.168.10.2
@@ -169,7 +170,6 @@ services:
     depends_on:
       - babylondnode0
       - consumer-eotsmanager
-      - ibcsim-bcd
     restart: unless-stopped
 
   eotsmanager:
@@ -225,21 +225,6 @@ services:
     depends_on:
       - babylondnode0
       - covenant-signer
-    restart: unless-stopped
-
-  ibcsim-bcd:
-    container_name: ibcsim-bcd
-    image: babylonlabs-io/ibcsim-bcd
-    ports:
-      - "5183:5183"
-    volumes:
-      - ../.testnets:/data:Z
-    networks:
-      localnet:
-        ipv4_address: 192.168.10.18
-    depends_on:
-      - babylondnode0
-      - babylondnode1
     restart: unless-stopped
 
 networks:
