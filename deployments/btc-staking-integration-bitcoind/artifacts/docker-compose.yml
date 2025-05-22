@@ -8,6 +8,8 @@ services:
       - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
+    environment:
+      - BABYLON_BLS_PASSWORD=password
     ports:
       - "26656-26657:26656-26657"
       - "1317:1317"
@@ -29,6 +31,8 @@ services:
       - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
+    environment:
+      - BABYLON_BLS_PASSWORD=password      
     ports:
       - "26666-26667:26656-26657"
       - "1318:1317"
