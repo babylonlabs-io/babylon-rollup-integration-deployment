@@ -37,7 +37,7 @@ babylon:
   key-directory: /home/vigilante/config
   debug: true
   timeout: 20s
-  block-timeout: ~
+  block-timeout: 10s
   output-format: json
   submitter-address: bbn1v6k7k9s8md3k29cu9runasstq5zaa0lpznk27w
   sign-mode: direct
@@ -94,3 +94,6 @@ btcstaking-tracker:
   max-jitter-interval: 30s
   btcnetparams: regtest
   max-slashing-concurrency: 20
+  indexer-addr: http://localhost:3000
+  fetch-comet-block-interval: 3s
+  fetch-evidence-interval: 10s
