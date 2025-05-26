@@ -138,6 +138,9 @@ services:
     networks:
       localnet:
         ipv4_address: 192.168.10.11
+    environment:
+      - BTCSTAKER_USERNAME=rpcuser
+      - BTCSTAKER_PASSWORD=rpcpass        
     volumes:
       - ../.testnets/btc-staker:/home/btcstaker/.stakerd
     ports:
