@@ -24,4 +24,8 @@ bitcoindsim-rmi:
 ibcsim-gaia-rmi:
 	docker rmi babylonlabs-io/ibcsim-gaia 2>/dev/null; true
 
-.PHONY: all btcdsim btcdsim-rmi bitcoindsim bitcoindsim-rmi ibcsim-gaia ibcsim-gaia-rmi
+tmkms:
+	docker build --platform "linux/amd64" --tag babylonlabs-io/tmkms:latest -f tmkms/Dockerfile \
+		$(shell git rev-parse --show-toplevel)/contrib/images/tmkms
+
+.PHONY: all btcdsim btcdsim-rmi bitcoindsim bitcoindsim-rmi ibcsim-gaia ibcsim-gaia-rmi tmkms
