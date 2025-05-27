@@ -46,7 +46,6 @@ echo "Creating 1 Babylon finality provider..."
 bbn_btc_pk=$(docker exec eotsmanager /bin/sh -c "
     /bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client "0.0.0.0:15813" --output=json
 ")
-echo "Raw output from eotsd: $bbn_btc_pk"
 
 # Filter out warning messages and get only the JSON part
 bbn_btc_pk=$(echo "$bbn_btc_pk" | grep -v "Warning:" | jq -r '.pubkey_hex')
@@ -66,14 +65,6 @@ bbn_fp_output=$(docker exec finality-provider /bin/sh -c "
         --commission-max-change-rate 0.01 \
         --moniker \"Babylon finality provider\" 2>&1"
 )
-
-echo "Raw output from Babylon fpd cfp:"
-echo "$bbn_fp_output"
-
-if [ -z "$bbn_fp_output" ]; then
-    echo "Failed to create Babylon finality provider"
-    exit 1
-fi
 
 # Filter out the text message and parse only the JSON part
 bbn_btc_pk=$(echo "$bbn_fp_output" | grep -v "Your finality provider is successfully created" | jq -r '.finality_provider.btc_pk_hex')
@@ -98,7 +89,6 @@ echo ""
 consumer_btc_pk=$(docker exec consumer-eotsmanager /bin/sh -c "
     /bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client "0.0.0.0:15813" --output=json
 ")
-echo "Raw output from consumer eotsd: $consumer_btc_pk"
 
 # Filter out warning messages and get only the JSON part
 consumer_btc_pk=$(echo "$consumer_btc_pk" | grep -v "Warning:" | jq -r '.pubkey_hex')
@@ -119,14 +109,6 @@ consumer_fp_output=$(docker exec consumer-fp /bin/sh -c "
         --moniker \"Consumer finality Provider\" 2>&1"
 )
 
-echo "Raw output from Consumer fpd cfp:"
-echo "$consumer_fp_output"
-
-if [ -z "$consumer_fp_output" ]; then
-    echo "Failed to create Consumer finality provider"
-    exit 1
-fi
-
 # Filter out the text message and parse only the JSON part
 consumer_btc_pk=$(echo "$consumer_fp_output" | grep -v "Your finality provider is successfully created" | jq -r '.finality_provider.btc_pk_hex')
 if [ -z "$consumer_btc_pk" ]; then
@@ -135,6 +117,12 @@ if [ -z "$consumer_btc_pk" ]; then
 fi
 echo "Created 1 consumer chain finality provider"
 echo "BTC PK of consumer chain finality provider: $consumer_btc_pk"
+
+# Restart the consumer finality provider containers so that key creation command above
+# takes effect and finality provider is start communication with the chain.
+echo "Restarting Consumer finality provider..."
+docker restart consumer-fp
+echo "Consumer finality provider restarted"
 
 #################################
 #  Multi-stake BTC to finality  #
@@ -173,44 +161,17 @@ while true; do
 done
 
 #################################
-# Commit public randomness      #
+#  NOTE: Current Demo State     #
 #################################
 
-# TODO: mock commit pub rand using unsafe-commit-pubrand command
-# fpd will lock DB when running, so need to find a way to make unsafe-commit-pubrand command work
-
-echo ""
-echo "Ensuring all finality providers have committed public randomness..."
-while true; do
-    pr_commit_info=$(docker exec babylondnode0 /bin/sh -c "babylond query wasm contract-state smart $finalityContractAddr '{\"last_pub_rand_commit\":{\"btc_pk_hex\":\"$consumer_btc_pk\"}}' -o json")
-    if [[ "$(echo "$pr_commit_info" | jq '.data')" == *"null"* ]]; then
-        echo "The finality provider $consumer_btc_pk hasn't committed any public randomness yet"
-        sleep 10
-    else
-        echo "The finality provider $consumer_btc_pk has committed public randomness"
-        break
-    fi
-done
-
-###################################
-#  Ensure finality providers are  #
-#  submitting finality signatures #
-###################################
-
-# TODO: mock add finality signature using unsafe-add-finality-sig command
-# fpd will lock DB when running, so need to find a way to make unsafe-add-finality-signature command work
-
-echo ""
-echo "Ensuring all finality providers have submitted finality signatures..."
-last_block_height=$(docker exec babylondnode0 /bin/sh -c "babylond query blocks --query \"block.height > 1\" --page 1 --limit 1 --order_by desc -o json | jq -r '.blocks[0].header.height'")
-last_block_height=$((last_block_height + 1))
-while true; do
-    finality_sig_info=$(docker exec babylondnode0 /bin/sh -c "babylond query wasm contract-state smart $finalityContractAddr '{\"finality_signature\":{\"btc_pk_hex\":\"$consumer_btc_pk\",\"height\":$last_block_height}}' -o json")
-    if [ $(echo "$finality_sig_info" | jq '.data | length') -ne "1" ]; then
-        echo "The finality provider $consumer_btc_pk hasn't submitted finality signature to $last_block_height yet"
-        sleep 10
-    else
-        echo "The finality provider $consumer_btc_pk has submitted finality signature to $last_block_height"
-        break
-    fi
-done
+# The demo currently stops after BTC delegation activation.
+# The following steps are temporarily disabled as the OPStackL2 RPC node is down:
+# 1. Public randomness commitment verification
+# 2. Finality signature submission verification
+#
+# Future plans:
+# 1. Option 1: Spin up L2 infrastructure in-house using https://github.com/Snapchain/op-chain-deployment
+# 2. Option 2: Use mock interfaces for testing
+#
+# Once the v4 devnet is up and the process is formalized, this demo script will be updated
+# to include the complete finality provider verification flow.
