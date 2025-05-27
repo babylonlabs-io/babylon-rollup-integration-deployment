@@ -35,7 +35,7 @@ echo "Finality contract instantiated at: $finalityContractAddr"
 ###############################
 
 echo "Registering the consumer"
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description 2 $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
 
 ###############################
 #  Create FP for Babylon      #
@@ -44,16 +44,43 @@ docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcs
 echo ""
 echo "Creating 1 Babylon finality provider..."
 bbn_btc_pk=$(docker exec eotsmanager /bin/sh -c "
-    /bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client "0.0.0.0:15813" --output=json | jq -r '.pubkey_hex'
+    /bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client "0.0.0.0:15813" --output=json
 ")
-docker exec finality-provider /bin/sh -c "
-    /bin/fpd cfp --key-name finality-provider \
+echo "Raw output from eotsd: $bbn_btc_pk"
+
+# Filter out warning messages and get only the JSON part
+bbn_btc_pk=$(echo "$bbn_btc_pk" | grep -v "Warning:" | jq -r '.pubkey_hex')
+if [ -z "$bbn_btc_pk" ]; then
+    echo "Failed to generate Babylon EOTS public key"
+    exit 1
+fi
+echo "Babylon EOTS public key: $bbn_btc_pk"
+
+bbn_fp_output=$(docker exec finality-provider /bin/sh -c "
+    /bin/fpd cfp \
+        --key-name finality-provider \
         --chain-id $BBN_CHAIN_ID \
         --eots-pk $bbn_btc_pk \
         --commission-rate 0.05 \
-        --moniker \"Babylon finality provider\" | head -n -1 | jq -r .btc_pk_hex
-"
+        --commission-max-rate 0.20 \
+        --commission-max-change-rate 0.01 \
+        --moniker \"Babylon finality provider\" 2>&1"
+)
 
+echo "Raw output from Babylon fpd cfp:"
+echo "$bbn_fp_output"
+
+if [ -z "$bbn_fp_output" ]; then
+    echo "Failed to create Babylon finality provider"
+    exit 1
+fi
+
+# Filter out the text message and parse only the JSON part
+bbn_btc_pk=$(echo "$bbn_fp_output" | grep -v "Your finality provider is successfully created" | jq -r '.finality_provider.btc_pk_hex')
+if [ -z "$bbn_btc_pk" ]; then
+    echo "Failed to extract Babylon BTC public key"
+    exit 1
+fi
 echo "Created 1 Babylon finality provider"
 echo "BTC PK of Babylon finality provider: $bbn_btc_pk"
 
@@ -69,18 +96,43 @@ echo "Babylon finality provider restarted"
 
 echo ""
 consumer_btc_pk=$(docker exec consumer-eotsmanager /bin/sh -c "
-    /bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client "0.0.0.0:15813" --output=json | jq -r '.pubkey_hex'
+    /bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client "0.0.0.0:15813" --output=json
 ")
-echo "Consumer finality provider EOTS public key: $consumer_btc_pk"
+echo "Raw output from consumer eotsd: $consumer_btc_pk"
 
-docker exec consumer-fp /bin/sh -c "
-    /bin/fpd cfp --key-name finality-provider \
+# Filter out warning messages and get only the JSON part
+consumer_btc_pk=$(echo "$consumer_btc_pk" | grep -v "Warning:" | jq -r '.pubkey_hex')
+if [ -z "$consumer_btc_pk" ]; then
+    echo "Failed to generate Consumer EOTS public key"
+    exit 1
+fi
+echo "Consumer EOTS public key: $consumer_btc_pk"
+
+consumer_fp_output=$(docker exec consumer-fp /bin/sh -c "
+    /bin/fpd cfp \
+        --key-name finality-provider \
         --chain-id $CONSUMER_ID \
         --eots-pk $consumer_btc_pk \
         --commission-rate 0.05 \
-        --moniker \"Consumer finality Provider\"
-"
+        --commission-max-rate 0.20 \
+        --commission-max-change-rate 0.01 \
+        --moniker \"Consumer finality Provider\" 2>&1"
+)
 
+echo "Raw output from Consumer fpd cfp:"
+echo "$consumer_fp_output"
+
+if [ -z "$consumer_fp_output" ]; then
+    echo "Failed to create Consumer finality provider"
+    exit 1
+fi
+
+# Filter out the text message and parse only the JSON part
+consumer_btc_pk=$(echo "$consumer_fp_output" | grep -v "Your finality provider is successfully created" | jq -r '.finality_provider.btc_pk_hex')
+if [ -z "$consumer_btc_pk" ]; then
+    echo "Failed to extract Consumer BTC public key"
+    exit 1
+fi
 echo "Created 1 consumer chain finality provider"
 echo "BTC PK of consumer chain finality provider: $consumer_btc_pk"
 
