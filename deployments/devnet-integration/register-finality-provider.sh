@@ -43,11 +43,11 @@ sudo docker exec consumer-fp /bin/sh -c "
     /bin/fpd cfp \
         --key-name finality-provider \
         --chain-id $CONSUMER_ID \
-        --eots-pk $bbn_btc_pk \
+        --eots-pk $fp_btc_pk \
         --commission-rate 0.05 \
         --commission-max-rate 0.20 \
         --commission-max-change-rate 0.01 \
-        --moniker \"Babylon finality provider\" 2>&1
+        --moniker \"Babylon-finality-provider\" 2>&1
 "
 echo "Consumer finality provider created"
 
