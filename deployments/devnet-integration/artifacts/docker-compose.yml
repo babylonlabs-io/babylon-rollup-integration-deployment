@@ -1,7 +1,7 @@
 services:
   consumer-fp:
     container_name: consumer-fp
-    image: babylonlabs-io/finality-provider
+    image: babylonlabs/finality-provider:v4.0.0-rc.0
     command: >
       sh -c "
         fpd keys add finality-provider --keyring-backend=test &&
@@ -18,7 +18,7 @@ services:
 
   consumer-eotsmanager:
     container_name: consumer-eotsmanager
-    image: babylonlabs-io/finality-provider
+    image: babylonlabs/finality-provider:v4.0.0-rc.0
     command: >
       sh -c "
         eotsd keys add finality-provider --keyring-backend=test --output json | jq -r '.pubkey_hex' > /home/finality-provider/.eotsd/pubkey.hex &&

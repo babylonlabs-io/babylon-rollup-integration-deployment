@@ -40,11 +40,14 @@ echo "Consumer finality provider account $fp_bbn_addr funded"
 # create consumer finality provider on Babylon
 echo "Creating consumer finality provider on Babylon..."
 sudo docker exec consumer-fp /bin/sh -c "
-    /bin/fpd cfp --key-name finality-provider \
+    /bin/fpd cfp \
+        --key-name finality-provider \
         --chain-id $CONSUMER_ID \
-        --eots-pk $fp_btc_pk \
+        --eots-pk $bbn_btc_pk \
         --commission-rate 0.05 \
-        --moniker \"Example finality provider\"
+        --commission-max-rate 0.20 \
+        --commission-max-change-rate 0.01 \
+        --moniker \"Babylon finality provider\" 2>&1
 "
 echo "Consumer finality provider created"
 
