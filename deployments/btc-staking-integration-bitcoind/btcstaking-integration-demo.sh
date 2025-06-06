@@ -12,6 +12,8 @@ echo "========================================"
 admin=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json | jq -r '.address'")
 echo "Using admin address: $admin"
 
+sleep 5
+
 ###############################
 # Step 1: Deploy Finality     #
 # Contract                    #
