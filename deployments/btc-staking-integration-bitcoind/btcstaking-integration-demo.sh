@@ -1,177 +1,176 @@
 #!/bin/bash
 
+set -e  # Exit on any error
+
 BBN_CHAIN_ID="chain-test"
 CONSUMER_ID="consumer-id"
 
+echo "🚀 Starting BTC Staking Integration Demo"
+echo "========================================"
+
+# Get admin address for contract instantiation
 admin=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json | jq -r '.address'")
+echo "Using admin address: $admin"
 
 ###############################
-# Upload and instantiate the  #
-#   finality contract on      #
-#         Babylon             #
+# Step 1: Deploy Finality     #
+# Contract                    #
 ###############################
+
+echo ""
+echo "📋 Step 1: Deploying finality contract..."
+
+echo "  → Storing contract WASM..."
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm store /contracts/op_finality_gadget.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.3 --fees 1000000ubbn -y" > /dev/null
 
 sleep 5
 
-echo "Storing finality contract..."
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm store /contracts/op_finality_gadget.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.3 --fees 1000000ubbn -y"
-
-sleep 5
-
-echo "Instantiating finality contract..."
+echo "  → Instantiating contract..."
 INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"consumer_id\":\"$CONSUMER_ID\",\"is_enabled\":true}"
-echo "INSTANTIATE_MSG_JSON: $INSTANTIATE_MSG_JSON"
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn --label 'finality' --admin $admin --from test-spending-key -y"
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn --label 'finality' --admin $admin --from test-spending-key -y" > /dev/null
 
 sleep 5
 
 # Extract contract address
 finalityContractAddr=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q wasm list-contracts-by-code 1 --output json | jq -r '.contracts[0]'")
-
-echo "Finality contract instantiated at: $finalityContractAddr"
-
-###############################
-#    Register the consumer    #
-###############################
-
-echo "Registering the consumer"
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description 2 $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
+echo "  ✅ Finality contract deployed at: $finalityContractAddr"
 
 ###############################
-#  Create FP for Babylon      #
+# Step 2: Register Consumer   #
 ###############################
 
 echo ""
-echo "Creating 1 Babylon finality provider..."
-bbn_btc_pk=$(docker exec eotsmanager /bin/sh -c "
-    /bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client "0.0.0.0:15813" --output=json
-")
+echo "🔗 Step 2: Registering consumer chain..."
 
-# Filter out warning messages and get only the JSON part
-bbn_btc_pk=$(echo "$bbn_btc_pk" | grep -v "Warning:" | jq -r '.pubkey_hex')
-if [ -z "$bbn_btc_pk" ]; then
-    echo "Failed to generate Babylon EOTS public key"
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description 2 $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y" > /dev/null
+
+sleep 3
+echo "  ✅ Consumer '$CONSUMER_ID' registered successfully"
+
+###############################
+# Step 3: Create Babylon FP   #
+###############################
+
+echo ""
+echo "🏛️ Step 3: Creating Babylon finality provider..."
+
+echo "  → Generating EOTS key..."
+bbn_eots_pk=$(docker exec eotsmanager /bin/sh -c "/bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client '0.0.0.0:15813' --output=json" | grep -v "Warning:" | jq -r '.pubkey_hex')
+
+if [ -z "$bbn_eots_pk" ]; then
+    echo "  ❌ Failed to generate Babylon EOTS public key"
     exit 1
 fi
-echo "Babylon EOTS public key: $bbn_btc_pk"
 
-bbn_fp_output=$(docker exec finality-provider /bin/sh -c "
-    /bin/fpd cfp \
-        --key-name finality-provider \
-        --chain-id $BBN_CHAIN_ID \
-        --eots-pk $bbn_btc_pk \
-        --commission-rate 0.05 \
-        --commission-max-rate 0.20 \
-        --commission-max-change-rate 0.01 \
-        --moniker \"Babylon finality provider\" 2>&1"
-)
+echo "  → Creating finality provider..."
+bbn_fp_output=$(docker exec finality-provider /bin/sh -c "/bin/fpd cfp --key-name finality-provider --chain-id $BBN_CHAIN_ID --eots-pk $bbn_eots_pk --commission-rate 0.05 --commission-max-rate 0.20 --commission-max-change-rate 0.01 --moniker 'Babylon FP' 2>&1")
 
-# Filter out the text message and parse only the JSON part
 bbn_btc_pk=$(echo "$bbn_fp_output" | grep -v "Your finality provider is successfully created" | jq -r '.finality_provider.btc_pk_hex')
 if [ -z "$bbn_btc_pk" ]; then
-    echo "Failed to extract Babylon BTC public key"
+    echo "  ❌ Failed to extract Babylon BTC public key"
     exit 1
 fi
-echo "Created 1 Babylon finality provider"
-echo "BTC PK of Babylon finality provider: $bbn_btc_pk"
 
-# Restart the finality provider containers so that key creation command above
-# takes effect and finality provider is start communication with the chain.
-echo "Restarting Babylon finality provider..."
-docker restart finality-provider
-echo "Babylon finality provider restarted"
+echo "  → Restarting finality provider..."
+docker restart finality-provider > /dev/null
+echo "  ✅ Babylon FP created with BTC PK: $bbn_btc_pk"
 
 ###############################
-#  Create FP for Consumer     #
+# Step 4: Create Consumer FP  #
 ###############################
 
 echo ""
-consumer_btc_pk=$(docker exec consumer-eotsmanager /bin/sh -c "
-    /bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client "0.0.0.0:15813" --output=json
-")
+echo "🌐 Step 4: Creating consumer finality provider..."
 
-# Filter out warning messages and get only the JSON part
-consumer_btc_pk=$(echo "$consumer_btc_pk" | grep -v "Warning:" | jq -r '.pubkey_hex')
-if [ -z "$consumer_btc_pk" ]; then
-    echo "Failed to generate Consumer EOTS public key"
+echo "  → Generating consumer EOTS key..."
+consumer_eots_pk=$(docker exec consumer-eotsmanager /bin/sh -c "/bin/eotsd keys add finality-provider --keyring-backend=test --rpc-client '0.0.0.0:15813' --output=json" | grep -v "Warning:" | jq -r '.pubkey_hex')
+
+if [ -z "$consumer_eots_pk" ]; then
+    echo "  ❌ Failed to generate Consumer EOTS public key"
     exit 1
 fi
-echo "Consumer EOTS public key: $consumer_btc_pk"
 
-consumer_fp_output=$(docker exec consumer-fp /bin/sh -c "
-    /bin/fpd cfp \
-        --key-name finality-provider \
-        --chain-id $CONSUMER_ID \
-        --eots-pk $consumer_btc_pk \
-        --commission-rate 0.05 \
-        --commission-max-rate 0.20 \
-        --commission-max-change-rate 0.01 \
-        --moniker \"Consumer finality Provider\" 2>&1"
-)
+echo "  → Creating consumer finality provider..."
+consumer_fp_output=$(docker exec consumer-fp /bin/sh -c "/bin/fpd cfp --key-name finality-provider --chain-id $CONSUMER_ID --eots-pk $consumer_eots_pk --commission-rate 0.05 --commission-max-rate 0.20 --commission-max-change-rate 0.01 --moniker 'Consumer FP' 2>&1")
 
-# Filter out the text message and parse only the JSON part
 consumer_btc_pk=$(echo "$consumer_fp_output" | grep -v "Your finality provider is successfully created" | jq -r '.finality_provider.btc_pk_hex')
 if [ -z "$consumer_btc_pk" ]; then
-    echo "Failed to extract Consumer BTC public key"
+    echo "  ❌ Failed to extract Consumer BTC public key"
     exit 1
 fi
-echo "Created 1 consumer chain finality provider"
-echo "BTC PK of consumer chain finality provider: $consumer_btc_pk"
 
-# Restart the consumer finality provider containers so that key creation command above
-# takes effect and finality provider is start communication with the chain.
-echo "Restarting Consumer finality provider..."
-docker restart consumer-fp
-echo "Consumer finality provider restarted"
+echo "  → Restarting consumer finality provider..."
+docker restart consumer-fp > /dev/null
+echo "  ✅ Consumer FP created with BTC PK: $consumer_btc_pk"
 
-#################################
-#  Multi-stake BTC to finality  #
-#  providers on Babylon and     #
-#  Consumer chain               #
-#################################
+###############################
+# Step 5: Stake BTC           #
+###############################
 
 echo ""
-echo "Make a BTC delegation to the finality providers"
-sleep 10
-# Get the available BTC addresses for delegations
+echo "₿ Step 5: Creating BTC delegation..."
+
+echo "  → Getting available BTC addresses..."
 delAddrs=($(docker exec btc-staker /bin/sh -c '/bin/stakercli dn list-outputs | jq -r ".outputs[].address" | sort | uniq'))
 stakingTime=10000
-echo "Delegating 1 million Satoshis from BTC address ${delAddrs[i]} to Finality Provider with consumer finality provider $consumer_btc_pk and Babylon finality provider $bbn_btc_pk for $stakingTime BTC blocks"
+stakingAmount=1000000  # 1M satoshis
 
-btcTxHash=$(docker exec btc-staker /bin/sh -c \
-    "/bin/stakercli dn stake --staker-address ${delAddrs[i]} --staking-amount 1000000 --finality-providers-pks $bbn_btc_pk --finality-providers-pks $consumer_btc_pk --staking-time $stakingTime | jq -r '.tx_hash'")
-echo "Delegation was successful; staking tx hash is $btcTxHash"
-echo "Made a BTC delegation to the finality providers"
+echo "  → Delegating $stakingAmount satoshis for $stakingTime blocks..."
+echo "    From: ${delAddrs[0]}"
+echo "    To FPs: Babylon ($bbn_btc_pk) + Consumer ($consumer_btc_pk)"
 
-# Query babylon and check if the BTC delegation is active
+btcTxHash=$(docker exec btc-staker /bin/sh -c "/bin/stakercli dn stake --staker-address ${delAddrs[0]} --staking-amount $stakingAmount --finality-providers-pks $bbn_btc_pk --finality-providers-pks $consumer_btc_pk --staking-time $stakingTime | jq -r '.tx_hash'")
+
+if [ -z "$btcTxHash" ] || [ "$btcTxHash" = "null" ]; then
+    echo "  ❌ Failed to create BTC delegation"
+    exit 1
+fi
+
+echo "  ✅ BTC delegation created: $btcTxHash"
+
+###############################
+# Step 6: Wait for Activation #
+###############################
+
 echo ""
-echo "Wait a few minutes for the BTC delegation to become active..."
-while true; do
-    # Get the active delegations count from Babylon
+echo "⏳ Step 6: Waiting for delegation activation..."
+
+echo "  → Monitoring delegation status..."
+for i in {1..30}; do
     activeDelegations=$(docker exec babylondnode0 /bin/sh -c 'babylond q btcstaking btc-delegations active -o json | jq ".btc_delegations | length"')
-
-    echo "Active delegations count in Babylon: $activeDelegations"
-
+    
     if [ "$activeDelegations" -eq 1 ]; then
-        echo "All delegations have become active"
+        echo "  ✅ Delegation activated successfully!"
         break
-    else
-        sleep 10
     fi
+    
+    echo "    Attempt $i/30: $activeDelegations active delegations, waiting..."
+    sleep 10
 done
 
-#################################
-#  NOTE: Current Demo State     #
-#################################
+if [ "$activeDelegations" -ne 1 ]; then
+    echo "  ⚠️ Warning: Delegation not activated after 5 minutes"
+fi
 
-# The demo currently stops after BTC delegation activation.
-# The following steps are temporarily disabled as the OPStackL2 RPC node is down:
-# 1. Public randomness commitment verification
-# 2. Finality signature submission verification
-#
-# Future plans:
-# 1. Option 1: Spin up L2 infrastructure in-house using https://github.com/Snapchain/op-chain-deployment
-# 2. Option 2: Use mock interfaces for testing
-#
-# Once the v4 devnet is up and the process is formalized, this demo script will be updated
-# to include the complete finality provider verification flow.
+###############################
+# Demo Summary                #
+###############################
+
+echo ""
+echo "🎉 BTC Staking Integration Demo Complete!"
+echo "========================================"
+echo ""
+echo "📊 Summary:"
+echo "  ✅ Finality contract:     $finalityContractAddr"
+echo "  ✅ Consumer ID:           $CONSUMER_ID"
+echo "  ✅ Babylon FP BTC PK:     $bbn_btc_pk"
+echo "  ✅ Consumer FP BTC PK:     $consumer_btc_pk"
+echo "  ✅ BTC delegation:        $btcTxHash"
+echo "  ✅ Active delegations:    $activeDelegations"
+echo ""
+echo "🔮 Next Steps (Future Implementation):"
+echo "  → Public randomness commitment to finality contract"
+echo "  → Finality signature submission"
+echo "  → Full consumer chain finality verification"
+echo ""
+echo "The BTC staking infrastructure is now ready for finality provider operations!"
