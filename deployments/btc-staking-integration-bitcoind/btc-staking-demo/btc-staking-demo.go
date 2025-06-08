@@ -117,6 +117,7 @@ func main() {
 
 	// Step 5: Stake BTC
 	fmt.Println("\n₿ Step 5: Creating BTC delegation...")
+	time.Sleep(5 * time.Second)
 	btcTxHash, err := stakeBTC(r, bbnBtcPk, consumerBtcPk)
 	if err != nil {
 		log.Fatalf("Failed to stake BTC: %v", err)
