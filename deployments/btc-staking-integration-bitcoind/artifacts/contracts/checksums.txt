@@ -1,1 +1,1 @@
-538ea43a141d830af3ca85a7643d74dc4fa78e644df481245a5b654a3b667e82  op_finality_gadget.wasm
+0a5b209b9e1e33daf82dbf0024e065c5519d23706a120bd5c123cd28289ea69f  op_finality_gadget.wasm
