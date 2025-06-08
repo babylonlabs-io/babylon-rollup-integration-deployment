@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,7 +13,6 @@ import (
 	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
 	bbn "github.com/babylonlabs-io/babylon/v4/types"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -283,16 +280,22 @@ func createBabylonFP(r *mathrand.Rand) (string, error) {
 		return "", fmt.Errorf("failed to parse admin address: %v", err)
 	}
 
-	// Generate proper PoP exactly like the tests using bstypes.NewPoPBTC
-	pop, err := NewPoPBTC(fpAddr, babylonFpSk)
+	// Generate PoP exactly like the tests do using datagen.NewPoPBTC
+	pop, err := datagen.NewPoPBTC(fpAddr, babylonFpSk)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate PoP: %v", err)
+	}
+
+	// Convert PoP to hex string for the command (exactly like tests do)
+	popHex, err := pop.ToHexStr()
+	if err != nil {
+		return "", fmt.Errorf("failed to convert PoP to hex: %v", err)
 	}
 
 	// Create finality provider using exact command structure from tests
 	fmt.Println("  → Creating finality provider...")
 	cmd := fmt.Sprintf("/bin/babylond --home /babylondhome tx btcstaking create-finality-provider %s %s --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --moniker \"Babylon FP\" --from %s --chain-id %s --keyring-backend %s --fees %s -y",
-		btcPkHex, pop, KEY_NAME, BBN_CHAIN_ID, KEYRING_BACKEND, FEES)
+		btcPkHex, popHex, KEY_NAME, BBN_CHAIN_ID, KEYRING_BACKEND, FEES)
 
 	_, err = execDockerCommand("babylondnode0", cmd)
 	if err != nil {
@@ -301,24 +304,6 @@ func createBabylonFP(r *mathrand.Rand) (string, error) {
 
 	time.Sleep(3 * time.Second)
 	return btcPkHex, nil
-}
-
-// NewPoPBTC generates PoP exactly like the tests do in datagen/pop.go
-// This is copied from babylon-rollup-integration-deployment/babylon/testutil/datagen/pop.go
-func NewPoPBTC(addr sdk.AccAddress, btcSK *btcec.PrivateKey) (string, error) {
-	// generate pop.BtcSig = schnorr_sign(sk_BTC, hash(bbnAddress))
-	// NOTE: *schnorr.Sign has to take the hash of the message.
-	// So we have to hash the address before signing
-
-	// Use sha256 instead of tmhash to avoid import issues
-	hash := sha256.Sum256(addr.Bytes())
-	btcSig, err := schnorr.Sign(btcSK, hash[:])
-	if err != nil {
-		return "", err
-	}
-
-	// Return the signature as hex string (this is what the command expects)
-	return hex.EncodeToString(btcSig.Serialize()), nil
 }
 
 func createConsumerFP(r *mathrand.Rand) (string, error) {
@@ -350,16 +335,22 @@ func createConsumerFP(r *mathrand.Rand) (string, error) {
 		return "", fmt.Errorf("failed to parse admin address: %v", err)
 	}
 
-	// Generate PoP using our copied function
-	popHex, err := NewPoPBTC(fpAddr, consumerFpSk)
+	// Generate PoP exactly like the tests do using datagen.NewPoPBTC
+	pop, err := datagen.NewPoPBTC(fpAddr, consumerFpSk)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate PoP: %v", err)
 	}
 
-	// Create consumer finality provider using babylond
+	// Convert PoP to hex string for the command (exactly like tests do)
+	popHex, err := pop.ToHexStr()
+	if err != nil {
+		return "", fmt.Errorf("failed to convert PoP to hex: %v", err)
+	}
+
+	// Create consumer finality provider using regular btcstaking command with consumer-id flag
 	fmt.Println("  → Creating consumer finality provider...")
-	cmd := fmt.Sprintf("/bin/babylond --home /babylondhome tx btcstkconsumer create-finality-provider %s %s %s --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --moniker \"Consumer FP\" --from %s --chain-id %s --keyring-backend %s --fees %s -y",
-		CONSUMER_ID, btcPkHex, popHex, KEY_NAME, BBN_CHAIN_ID, KEYRING_BACKEND, FEES)
+	cmd := fmt.Sprintf("/bin/babylond --home /babylondhome tx btcstaking create-finality-provider %s %s --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --moniker \"Consumer FP\" --consumer-id %s --from %s --chain-id %s --keyring-backend %s --fees %s -y",
+		btcPkHex, popHex, CONSUMER_ID, KEY_NAME, BBN_CHAIN_ID, KEYRING_BACKEND, FEES)
 
 	_, err = execDockerCommand("babylondnode0", cmd)
 	if err != nil {
