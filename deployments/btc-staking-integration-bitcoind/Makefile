@@ -22,7 +22,10 @@ build-covenant-emulator:
 build-covenant-signer:
 	$(MAKE) -C $(GIT_TOPLEVEL)/covenant-emulator/covenant-signer build-docker
 
-build-deployment-btc-staking-integration-bitcoind: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator
+build-tmkms:
+	$(MAKE) -C $(GIT_TOPLEVEL)/contrib/images tmkms
+
+build-deployment-btc-staking-integration-bitcoind: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator build-tmkms
 
 start-deployment-btc-staking-integration-bitcoind: stop-deployment-btc-staking-integration-bitcoind build-deployment-btc-staking-integration-bitcoind
 	./pre-deployment.sh
@@ -35,3 +38,11 @@ stop-deployment-btc-staking-integration-bitcoind:
 
 start-deployment-btc-staking-integration-bitcoind-demo: start-deployment-btc-staking-integration-bitcoind
 	./btcstaking-integration-demo.sh
+
+run-go-demo: start-deployment-btc-staking-integration-bitcoind
+	@echo "🚀 Running BTC Staking Integration Demo (Go Implementation)..."
+	cd btc-staking-demo && go run btc-staking-demo.go
+
+run-go-demo-only:
+	@echo "🚀 Running BTC Staking Integration Demo (assuming deployment is ready)..."
+	cd btc-staking-demo && go run btc-staking-demo.go
