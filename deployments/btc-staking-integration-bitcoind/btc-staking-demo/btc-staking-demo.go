@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,8 +12,10 @@ import (
 	"time"
 
 	appparams "github.com/babylonlabs-io/babylon/v4/app/params"
+	"github.com/babylonlabs-io/babylon/v4/crypto/eots"
 	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
 	bbn "github.com/babylonlabs-io/babylon/v4/types"
+	ftypes "github.com/babylonlabs-io/babylon/v4/x/finality/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -32,7 +35,6 @@ const (
 var (
 	babylonFpSk  *btcec.PrivateKey
 	consumerFpSk *btcec.PrivateKey
-	delBtcSk     *btcec.PrivateKey
 )
 
 type FinalityContractMsg struct {
@@ -80,7 +82,7 @@ func main() {
 	// Get admin address for contract instantiation
 	adminAddr, err := getAdminAddress()
 	if err != nil {
-		log.Fatalf("Failed to get admin address: %v", err)
+		log.Fatalf("❌ Failed to get admin address: %v", err)
 	}
 	fmt.Printf("Using admin address: %s\n", adminAddr)
 
@@ -90,7 +92,7 @@ func main() {
 	fmt.Println("\n📋 Step 1: Deploying finality contract...")
 	contractAddr, err := deployFinalityContract(adminAddr)
 	if err != nil {
-		log.Fatalf("Failed to deploy finality contract: %v", err)
+		log.Fatalf("❌ Failed to deploy finality contract: %v", err)
 	}
 	fmt.Printf("  ✅ Finality contract deployed at: %s\n", contractAddr)
 
@@ -100,7 +102,7 @@ func main() {
 	fmt.Println("\n🔗 Step 2: Registering consumer chain...")
 	err = registerConsumer(contractAddr)
 	if err != nil {
-		log.Fatalf("Failed to register consumer: %v", err)
+		log.Fatalf("❌ Failed to register consumer: %v", err)
 	}
 	fmt.Printf("  ✅ Consumer '%s' registered successfully\n", CONSUMER_ID)
 
@@ -110,7 +112,7 @@ func main() {
 	fmt.Println("\n🏛️ Step 3: Creating Babylon finality provider...")
 	bbnBtcPk, err := createBabylonFP(r)
 	if err != nil {
-		log.Fatalf("Failed to create Babylon FP: %v", err)
+		log.Fatalf("❌ Failed to create Babylon FP: %v", err)
 	}
 	fmt.Printf("  ✅ Babylon FP created with BTC PK: %s\n", bbnBtcPk)
 
@@ -120,7 +122,7 @@ func main() {
 	fmt.Println("\n🌐 Step 4: Creating consumer finality provider...")
 	consumerBtcPk, err := createConsumerFP(r)
 	if err != nil {
-		log.Fatalf("Failed to create Consumer FP: %v", err)
+		log.Fatalf("❌ Failed to create Consumer FP: %v", err)
 	}
 	fmt.Printf("  ✅ Consumer FP created with BTC PK: %s\n", consumerBtcPk)
 
@@ -131,7 +133,7 @@ func main() {
 	time.Sleep(5 * time.Second)
 	btcTxHash, err := stakeBTC(r, bbnBtcPk, consumerBtcPk)
 	if err != nil {
-		log.Fatalf("Failed to stake BTC: %v", err)
+		log.Fatalf("❌ Failed to stake BTC: %v", err)
 	}
 	fmt.Printf("  ✅ BTC delegation created: %s\n", btcTxHash)
 
@@ -141,21 +143,27 @@ func main() {
 	fmt.Println("\n⏳ Step 6: Waiting for delegation activation...")
 	activeDelegations, err := waitForDelegationActivation()
 	if err != nil {
-		log.Printf("  ⚠️ Warning: %v", err)
-	} else {
-		fmt.Printf("  ✅ Delegation activated successfully!\n")
+		log.Fatalf("❌ Failed to activate BTC delegation: %v", err)
 	}
+	fmt.Printf("  ✅ Delegation activated successfully!\n")
 
 	time.Sleep(5 * time.Second)
 
 	// Step 7: Commit Public Randomness
 	fmt.Println("\n🎲 Step 7: Committing public randomness...")
-	err = commitPublicRandomness(r, contractAddr, consumerBtcPk)
+	randListInfo, err := commitPublicRandomness(r, contractAddr, consumerBtcPk)
 	if err != nil {
-		log.Printf("  ⚠️ Warning: %v", err)
-	} else {
-		fmt.Printf("  ✅ Public randomness committed successfully!\n")
+		log.Fatalf("❌ Failed to commit public randomness: %v", err)
 	}
+	fmt.Printf("  ✅ Public randomness committed successfully!\n")
+
+	// Step 8: Submit Finality Signature
+	fmt.Println("\n✍️ Step 8: Submitting finality signature...")
+	finalitySigInfo, err := submitFinalitySignature(r, contractAddr, consumerBtcPk, randListInfo)
+	if err != nil {
+		log.Fatalf("❌ Failed to submit finality signature: %v", err)
+	}
+	fmt.Printf("  ✅ Finality signature submitted successfully!\n")
 
 	// Demo Summary
 	fmt.Println("\n🎉 BTC Staking Integration Demo Complete!")
@@ -167,6 +175,8 @@ func main() {
 	fmt.Printf("  ✅ Consumer FP BTC PK:     %s\n", consumerBtcPk)
 	fmt.Printf("  ✅ BTC delegation:        %s\n", btcTxHash)
 	fmt.Printf("  ✅ Active delegations:    %d\n", activeDelegations)
+	fmt.Printf("  ✅ Public randomness:     %d values from height 1\n", len(randListInfo.PRList))
+	fmt.Printf("  ✅ Finality signature:    %s\n", finalitySigInfo)
 	fmt.Printf("\nThe BTC staking infrastructure is now ready for finality provider operations!\n")
 }
 
@@ -543,7 +553,7 @@ func waitForDelegationActivation() (int, error) {
 	return 0, fmt.Errorf("delegation not activated after 5 minutes")
 }
 
-func commitPublicRandomness(r *mathrand.Rand, contractAddr, consumerBtcPk string) error {
+func commitPublicRandomness(r *mathrand.Rand, contractAddr, consumerBtcPk string) (*datagen.RandListInfo, error) {
 	fmt.Println("  → Generating public randomness list...")
 
 	// Generate random public randomness list exactly like the tests do
@@ -553,7 +563,7 @@ func commitPublicRandomness(r *mathrand.Rand, contractAddr, consumerBtcPk string
 	// Generate the message exactly like datagen.GenRandomMsgCommitPubRandList
 	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, consumerFpSk, commitStartHeight, numPubRand)
 	if err != nil {
-		return fmt.Errorf("failed to generate public randomness list: %v", err)
+		return nil, fmt.Errorf("failed to generate public randomness list: %v", err)
 	}
 
 	fmt.Printf("  → Generated %d public randomness values starting at height %d\n", numPubRand, commitStartHeight)
@@ -574,7 +584,7 @@ func commitPublicRandomness(r *mathrand.Rand, contractAddr, consumerBtcPk string
 
 	commitMsgBytes, err := json.Marshal(commitMsg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal commit message: %v", err)
+		return nil, fmt.Errorf("failed to marshal commit message: %v", err)
 	}
 
 	fmt.Printf("  → Contract: %s\n", contractAddr)
@@ -587,7 +597,7 @@ func commitPublicRandomness(r *mathrand.Rand, contractAddr, consumerBtcPk string
 		commitMsgStr, "--from", KEY_NAME, "--chain-id", BBN_CHAIN_ID,
 		"--keyring-backend", KEYRING_BACKEND, "--gas", "500000", "--fees", "100000ubbn", "-y", "--output", "json")
 	if err != nil {
-		return fmt.Errorf("failed to commit public randomness: %v", err)
+		return nil, fmt.Errorf("failed to commit public randomness: %v", err)
 	}
 
 	fmt.Printf("  → Submission result: %s\n", output)
@@ -597,8 +607,131 @@ func commitPublicRandomness(r *mathrand.Rand, contractAddr, consumerBtcPk string
 	fmt.Println("  → Verifying commitment was stored...")
 	err = verifyPublicRandomnessCommitment(contractAddr, consumerBtcPk, commitStartHeight, numPubRand, randListInfo.Commitment)
 	if err != nil {
-		return fmt.Errorf("failed to verify commitment: %v", err)
+		return nil, fmt.Errorf("failed to verify commitment: %v", err)
 	}
 
+	// Return the randListInfo for use in finality signatures
+	return randListInfo, nil
+}
+
+func submitFinalitySignature(r *mathrand.Rand, contractAddr, consumerBtcPk string, randListInfo *datagen.RandListInfo) (string, error) {
+	fmt.Println("  → Generating mock block to vote on...")
+
+	// Generate a random block exactly like the tests do
+	startHeight := uint64(1)
+	blockToVote := &ftypes.IndexedBlock{
+		Height:  startHeight,
+		AppHash: datagen.GenRandomByteArray(r, 32),
+	}
+
+	fmt.Printf("  → Mock block: height=%d, appHash=%x\n", blockToVote.Height, blockToVote.AppHash)
+
+	// Create message to sign (exactly like the tests)
+	msgToSign := append(sdk.Uint64ToBigEndian(startHeight), blockToVote.AppHash...)
+
+	// Generate EOTS signature using the first public randomness
+	fmt.Println("  → Generating EOTS signature...")
+	idx := 0
+	sig, err := eots.Sign(consumerFpSk, randListInfo.SRList[idx], msgToSign)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate EOTS signature: %v", err)
+	}
+	eotsSig := bbn.NewSchnorrEOTSSigFromModNScalar(sig)
+
+	// Create finality signature message for the contract (exactly like the tests)
+	proof := randListInfo.ProofList[idx].ToProto()
+	finalitySigMsg := map[string]interface{}{
+		"submit_finality_signature": map[string]interface{}{
+			"fp_pubkey_hex": consumerBtcPk,
+			"height":        startHeight,
+			"pub_rand":      randListInfo.PRList[idx].MustMarshal(),
+			"proof": map[string]interface{}{
+				"total":     uint64(proof.Total),
+				"index":     uint64(proof.Index),
+				"leaf_hash": proof.LeafHash,
+				"aunts":     proof.Aunts,
+			},
+			"block_hash": blockToVote.AppHash,
+			"signature":  eotsSig.MustMarshal(),
+		},
+	}
+
+	finalitySigMsgBytes, err := json.Marshal(finalitySigMsg)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal finality signature message: %v", err)
+	}
+
+	fmt.Printf("  → Submitting finality signature for block height %d...\n", startHeight)
+
+	// Submit to finality contract using wasm execute
+	finalitySigMsgStr := "'" + string(finalitySigMsgBytes) + "'"
+	output, err := execDockerCommand("babylondnode0",
+		"/bin/babylond", "--home", "/babylondhome", "tx", "wasm", "execute", contractAddr,
+		finalitySigMsgStr, "--from", KEY_NAME, "--chain-id", BBN_CHAIN_ID,
+		"--keyring-backend", KEYRING_BACKEND, "--gas", "500000", "--fees", "100000ubbn", "-y", "--output", "json")
+	if err != nil {
+		return "", fmt.Errorf("failed to submit finality signature: %v", err)
+	}
+
+	fmt.Printf("  → Submission result: %s\n", output)
+	time.Sleep(5 * time.Second) // Wait for transaction processing
+
+	// Verify the signature was recorded by querying block voters
+	fmt.Println("  → Verifying finality signature was recorded...")
+	err = verifyFinalitySignature(contractAddr, blockToVote.Height, blockToVote.AppHash, consumerBtcPk)
+	if err != nil {
+		return "", fmt.Errorf("failed to verify finality signature: %v", err)
+	}
+
+	// Return summary information
+	finalitySigSummary := fmt.Sprintf("Block height %d signed", startHeight)
+	return finalitySigSummary, nil
+}
+
+func verifyFinalitySignature(contractAddr string, blockHeight uint64, blockAppHash []byte, expectedVoter string) error {
+	// Create query message exactly like the tests do
+	queryMsg := map[string]interface{}{
+		"block_voters": map[string]interface{}{
+			"height": blockHeight,
+			"hash":   hex.EncodeToString(blockAppHash),
+		},
+	}
+
+	queryMsgBytes, err := json.Marshal(queryMsg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal query message: %v", err)
+	}
+
+	// Query the finality contract
+	queryMsgStr := "'" + string(queryMsgBytes) + "'"
+	output, err := execDockerCommand("babylondnode0",
+		"/bin/babylond", "--home", "/babylondhome", "q", "wasm", "contract-state", "smart",
+		contractAddr, queryMsgStr, "--output", "json")
+	if err != nil {
+		return fmt.Errorf("failed to query finality contract: %v", err)
+	}
+
+	// Parse the response
+	var response struct {
+		Data []string `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
+		return fmt.Errorf("failed to parse query response: %v", err)
+	}
+
+	// Check if our finality provider voted
+	found := false
+	for _, voter := range response.Data {
+		if voter == expectedVoter {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("finality provider %s not found in block voters", expectedVoter)
+	}
+
+	fmt.Printf("  ✅ Finality signature verified: %s voted for block height %d\n", expectedVoter, blockHeight)
 	return nil
 }
