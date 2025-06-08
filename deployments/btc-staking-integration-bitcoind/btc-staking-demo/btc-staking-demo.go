@@ -292,17 +292,19 @@ func createBabylonFP(r *mathrand.Rand) (string, error) {
 		return "", fmt.Errorf("failed to convert PoP to hex: %v", err)
 	}
 
-	// Create finality provider using exact command structure from tests
+	// Create finality provider (test pattern + Docker flags that tests add automatically)
 	fmt.Println("  → Creating finality provider...")
-	cmd := fmt.Sprintf("/bin/babylond --home /babylondhome tx btcstaking create-finality-provider %s %s --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --moniker \"Babylon FP\" --from %s --chain-id %s --keyring-backend %s --fees %s -y",
-		btcPkHex, popHex, KEY_NAME, BBN_CHAIN_ID, KEYRING_BACKEND, FEES)
+	cmd := fmt.Sprintf("/bin/babylond --home /babylondhome tx btcstaking create-finality-provider %s %s --from %s --moniker \"Babylon FP\" --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --chain-id %s --keyring-backend %s --gas-prices=1ubbn -y",
+		btcPkHex, popHex, KEY_NAME, BBN_CHAIN_ID, KEYRING_BACKEND)
 
-	_, err = execDockerCommand("babylondnode0", cmd)
+	fmt.Printf("  → Command: %s\n", cmd)
+	output, err := execDockerCommand("babylondnode0", cmd)
 	if err != nil {
 		return "", fmt.Errorf("failed to create finality provider: %v", err)
 	}
+	fmt.Printf("  → Output: %s\n", output)
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(6 * time.Second) // Increased delay to avoid sequence mismatch
 	return btcPkHex, nil
 }
 
@@ -347,15 +349,17 @@ func createConsumerFP(r *mathrand.Rand) (string, error) {
 		return "", fmt.Errorf("failed to convert PoP to hex: %v", err)
 	}
 
-	// Create consumer finality provider using regular btcstaking command with consumer-id flag
+	// Create consumer finality provider (test pattern + Docker flags that tests add automatically)
 	fmt.Println("  → Creating consumer finality provider...")
-	cmd := fmt.Sprintf("/bin/babylond --home /babylondhome tx btcstaking create-finality-provider %s %s --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --moniker \"Consumer FP\" --consumer-id %s --from %s --chain-id %s --keyring-backend %s --fees %s -y",
-		btcPkHex, popHex, CONSUMER_ID, KEY_NAME, BBN_CHAIN_ID, KEYRING_BACKEND, FEES)
+	cmd := fmt.Sprintf("/bin/babylond --home /babylondhome tx btcstaking create-finality-provider %s %s --from %s --moniker \"Consumer FP\" --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --consumer-id %s --chain-id %s --keyring-backend %s --gas-prices=1ubbn -y",
+		btcPkHex, popHex, KEY_NAME, CONSUMER_ID, BBN_CHAIN_ID, KEYRING_BACKEND)
 
-	_, err = execDockerCommand("babylondnode0", cmd)
+	fmt.Printf("  → Command: %s\n", cmd)
+	output, err := execDockerCommand("babylondnode0", cmd)
 	if err != nil {
 		return "", fmt.Errorf("failed to create consumer finality provider: %v", err)
 	}
+	fmt.Printf("  → Output: %s\n", output)
 
 	time.Sleep(3 * time.Second)
 	return btcPkHex, nil
