@@ -8,7 +8,37 @@ echo "====================================="
 # Hardcoded values for debugging
 BBN_CHAIN_ID="chain-test"
 CONSUMER_ID="consumer-id"
-consumer_btc_pk="bd644e143ac4c0cb85463b6cf085cd8caf7fe4472a33ba1fd02aba8e262a13f8"
+
+# Query the registered consumer finality provider dynamically
+echo "🔍 Querying registered consumer finality provider..."
+fps_result=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome query btcstkconsumer finality-providers $CONSUMER_ID --output json" 2>/dev/null || echo '{}')
+
+if echo "$fps_result" | jq -e '.finality_providers[0].btc_pk' > /dev/null 2>&1; then
+    consumer_btc_pk=$(echo "$fps_result" | jq -r '.finality_providers[0].btc_pk')
+    echo "  ✅ Found registered consumer FP public key: ${consumer_btc_pk:0:20}..."
+else
+    echo "  ❌ No consumer finality provider found in system"
+    echo "  💡 Make sure to run the main script first to create the Consumer FP"
+    exit 1
+fi
+
+# Export the private key from Consumer EOTS manager
+echo "🔑 Exporting private key from Consumer EOTS manager..."
+export_password="testpass123"
+armored_private_key=$(echo "$export_password" | docker exec -i consumer-eotsmanager eotsd keys export finality-provider --keyring-backend=test 2>/dev/null || echo "")
+
+if [[ "$armored_private_key" == *"BEGIN TENDERMINT PRIVATE KEY"* ]]; then
+    echo "  ✅ Successfully exported armored private key"
+    echo "  → Key format: Tendermint armored (encrypted with argon2)"
+    
+    # Extract the encrypted private key portion for Go helper
+    encrypted_key=$(echo "$armored_private_key" | grep -v "BEGIN\|END" | tr -d '\n')
+    echo "  → Extracted encrypted key: ${encrypted_key:0:20}..."
+else
+    echo "  ❌ Could not export private key from Consumer EOTS manager"
+    echo "  💡 Make sure consumer-eotsmanager container is running and has the key"
+    exit 1
+fi
 
 # Auto-detect finality contract address
 echo "🔍 Auto-detecting finality contract address..."
