@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -64,6 +65,8 @@ type StakerDelegationResponse struct {
 }
 
 func main() {
+	time.Sleep(7 * time.Second) // wait for containers to be ready
+
 	// Configure Babylon address prefixes (bbn instead of cosmos)
 	appparams.SetAddressPrefixes()
 
@@ -91,6 +94,8 @@ func main() {
 	}
 	fmt.Printf("  ✅ Finality contract deployed at: %s\n", contractAddr)
 
+	time.Sleep(5 * time.Second)
+
 	// Step 2: Register Consumer
 	fmt.Println("\n🔗 Step 2: Registering consumer chain...")
 	err = registerConsumer(contractAddr)
@@ -98,6 +103,8 @@ func main() {
 		log.Fatalf("Failed to register consumer: %v", err)
 	}
 	fmt.Printf("  ✅ Consumer '%s' registered successfully\n", CONSUMER_ID)
+
+	time.Sleep(5 * time.Second)
 
 	// Step 3: Create Babylon FP
 	fmt.Println("\n🏛️ Step 3: Creating Babylon finality provider...")
@@ -107,6 +114,8 @@ func main() {
 	}
 	fmt.Printf("  ✅ Babylon FP created with BTC PK: %s\n", bbnBtcPk)
 
+	time.Sleep(5 * time.Second)
+
 	// Step 4: Create Consumer FP
 	fmt.Println("\n🌐 Step 4: Creating consumer finality provider...")
 	consumerBtcPk, err := createConsumerFP(r)
@@ -114,6 +123,8 @@ func main() {
 		log.Fatalf("Failed to create Consumer FP: %v", err)
 	}
 	fmt.Printf("  ✅ Consumer FP created with BTC PK: %s\n", consumerBtcPk)
+
+	time.Sleep(5 * time.Second)
 
 	// Step 5: Stake BTC
 	fmt.Println("\n₿ Step 5: Creating BTC delegation...")
@@ -124,6 +135,8 @@ func main() {
 	}
 	fmt.Printf("  ✅ BTC delegation created: %s\n", btcTxHash)
 
+	time.Sleep(5 * time.Second)
+
 	// Step 6: Wait for Activation
 	fmt.Println("\n⏳ Step 6: Waiting for delegation activation...")
 	activeDelegations, err := waitForDelegationActivation()
@@ -132,6 +145,8 @@ func main() {
 	} else {
 		fmt.Printf("  ✅ Delegation activated successfully!\n")
 	}
+
+	time.Sleep(5 * time.Second)
 
 	// Step 7: Commit Public Randomness
 	fmt.Println("\n🎲 Step 7: Committing public randomness...")
@@ -305,25 +320,26 @@ func verifyPublicRandomnessCommitment(contractAddr, consumerBtcPk string, expect
 	var commitment struct {
 		StartHeight uint64 `json:"start_height"`
 		NumPubRand  uint64 `json:"num_pub_rand"`
-		Commitment  string `json:"commitment"`
+		Commitment  []byte `json:"commitment"` // Array of bytes, not string
 	}
 	if err := json.Unmarshal(dataBytes, &commitment); err != nil {
 		return fmt.Errorf("failed to parse commitment data: %v", err)
 	}
 
 	// Verify the commitment matches what we submitted
-	expectedCommitmentHex := fmt.Sprintf("%x", expectedCommitment)
 	if commitment.StartHeight != expectedStartHeight {
 		return fmt.Errorf("start height mismatch: expected %d, got %d", expectedStartHeight, commitment.StartHeight)
 	}
 	if commitment.NumPubRand != expectedNumPubRand {
 		return fmt.Errorf("num pub rand mismatch: expected %d, got %d", expectedNumPubRand, commitment.NumPubRand)
 	}
-	if commitment.Commitment != expectedCommitmentHex {
-		return fmt.Errorf("commitment mismatch: expected %s, got %s", expectedCommitmentHex, commitment.Commitment)
+
+	// Compare byte arrays directly
+	if !bytes.Equal(commitment.Commitment, expectedCommitment) {
+		return fmt.Errorf("commitment mismatch: expected %x, got %x", expectedCommitment, commitment.Commitment)
 	}
 
-	fmt.Printf("  ✅ Commitment verified: StartHeight=%d, NumPubRand=%d, Commitment=%s\n",
+	fmt.Printf("  ✅ Commitment verified: StartHeight=%d, NumPubRand=%d, Commitment=%x\n",
 		commitment.StartHeight, commitment.NumPubRand, commitment.Commitment)
 
 	return nil
