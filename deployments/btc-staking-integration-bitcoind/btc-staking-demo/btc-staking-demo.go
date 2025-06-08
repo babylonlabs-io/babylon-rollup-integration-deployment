@@ -133,6 +133,15 @@ func main() {
 		fmt.Printf("  ✅ Delegation activated successfully!\n")
 	}
 
+	// Step 7: Commit Public Randomness
+	fmt.Println("\n🎲 Step 7: Committing public randomness...")
+	err = commitPublicRandomness(r, contractAddr, consumerBtcPk)
+	if err != nil {
+		log.Printf("  ⚠️ Warning: %v", err)
+	} else {
+		fmt.Printf("  ✅ Public randomness committed successfully!\n")
+	}
+
 	// Demo Summary
 	fmt.Println("\n🎉 BTC Staking Integration Demo Complete!")
 	fmt.Println("===============================================")
@@ -249,6 +258,74 @@ func registerConsumer(contractAddr string) error {
 	}
 
 	time.Sleep(3 * time.Second)
+	return nil
+}
+
+func verifyPublicRandomnessCommitment(contractAddr, consumerBtcPk string, expectedStartHeight, expectedNumPubRand uint64, expectedCommitment []byte) error {
+	// Create query message exactly like the tests do
+	queryMsg := map[string]interface{}{
+		"last_pub_rand_commit": map[string]interface{}{
+			"btc_pk_hex": consumerBtcPk,
+		},
+	}
+
+	queryMsgBytes, err := json.Marshal(queryMsg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal query message: %v", err)
+	}
+
+	// Query the finality contract
+	queryMsgStr := "'" + string(queryMsgBytes) + "'"
+	output, err := execDockerCommand("babylondnode0",
+		"/bin/babylond", "--home", "/babylondhome", "q", "wasm", "contract-state", "smart",
+		contractAddr, queryMsgStr, "--output", "json")
+	if err != nil {
+		return fmt.Errorf("failed to query finality contract: %v", err)
+	}
+
+	// Parse the response
+	var response struct {
+		Data interface{} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
+		return fmt.Errorf("failed to parse query response: %v", err)
+	}
+
+	// Check if data is null (no commitment found)
+	if response.Data == nil {
+		return fmt.Errorf("no public randomness commitment found for FP %s", consumerBtcPk)
+	}
+
+	// Parse the commitment data
+	dataBytes, err := json.Marshal(response.Data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal response data: %v", err)
+	}
+
+	var commitment struct {
+		StartHeight uint64 `json:"start_height"`
+		NumPubRand  uint64 `json:"num_pub_rand"`
+		Commitment  string `json:"commitment"`
+	}
+	if err := json.Unmarshal(dataBytes, &commitment); err != nil {
+		return fmt.Errorf("failed to parse commitment data: %v", err)
+	}
+
+	// Verify the commitment matches what we submitted
+	expectedCommitmentHex := fmt.Sprintf("%x", expectedCommitment)
+	if commitment.StartHeight != expectedStartHeight {
+		return fmt.Errorf("start height mismatch: expected %d, got %d", expectedStartHeight, commitment.StartHeight)
+	}
+	if commitment.NumPubRand != expectedNumPubRand {
+		return fmt.Errorf("num pub rand mismatch: expected %d, got %d", expectedNumPubRand, commitment.NumPubRand)
+	}
+	if commitment.Commitment != expectedCommitmentHex {
+		return fmt.Errorf("commitment mismatch: expected %s, got %s", expectedCommitmentHex, commitment.Commitment)
+	}
+
+	fmt.Printf("  ✅ Commitment verified: StartHeight=%d, NumPubRand=%d, Commitment=%s\n",
+		commitment.StartHeight, commitment.NumPubRand, commitment.Commitment)
+
 	return nil
 }
 
@@ -448,4 +525,64 @@ func waitForDelegationActivation() (int, error) {
 	}
 
 	return 0, fmt.Errorf("delegation not activated after 5 minutes")
+}
+
+func commitPublicRandomness(r *mathrand.Rand, contractAddr, consumerBtcPk string) error {
+	fmt.Println("  → Generating public randomness list...")
+
+	// Generate random public randomness list exactly like the tests do
+	numPubRand := uint64(100)
+	commitStartHeight := uint64(1)
+
+	// Generate the message exactly like datagen.GenRandomMsgCommitPubRandList
+	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, consumerFpSk, commitStartHeight, numPubRand)
+	if err != nil {
+		return fmt.Errorf("failed to generate public randomness list: %v", err)
+	}
+
+	fmt.Printf("  → Generated %d public randomness values starting at height %d\n", numPubRand, commitStartHeight)
+
+	// Commit public randomness to the consumer finality contract
+	fmt.Println("  → Committing to finality contract...")
+
+	// Create the commit message for the finality contract (exactly like the tests)
+	commitMsg := map[string]interface{}{
+		"commit_public_randomness": map[string]interface{}{
+			"fp_pubkey_hex": consumerBtcPk,
+			"start_height":  commitStartHeight,
+			"num_pub_rand":  numPubRand,
+			"commitment":    randListInfo.Commitment,
+			"signature":     msgCommitPubRandList.Sig.MustToBTCSig().Serialize(),
+		},
+	}
+
+	commitMsgBytes, err := json.Marshal(commitMsg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal commit message: %v", err)
+	}
+
+	fmt.Printf("  → Contract: %s\n", contractAddr)
+	fmt.Printf("  → Committing %d public randomness values...\n", numPubRand)
+
+	// Submit to finality contract using wasm execute
+	commitMsgStr := "'" + string(commitMsgBytes) + "'"
+	output, err := execDockerCommand("babylondnode0",
+		"/bin/babylond", "--home", "/babylondhome", "tx", "wasm", "execute", contractAddr,
+		commitMsgStr, "--from", KEY_NAME, "--chain-id", BBN_CHAIN_ID,
+		"--keyring-backend", KEYRING_BACKEND, "--gas", "500000", "--fees", "100000ubbn", "-y", "--output", "json")
+	if err != nil {
+		return fmt.Errorf("failed to commit public randomness: %v", err)
+	}
+
+	fmt.Printf("  → Submission result: %s\n", output)
+	time.Sleep(8 * time.Second) // Increased delay for transaction processing
+
+	// Query the finality contract to verify the commitment was stored
+	fmt.Println("  → Verifying commitment was stored...")
+	err = verifyPublicRandomnessCommitment(contractAddr, consumerBtcPk, commitStartHeight, numPubRand, randListInfo.Commitment)
+	if err != nil {
+		return fmt.Errorf("failed to verify commitment: %v", err)
+	}
+
+	return nil
 }
