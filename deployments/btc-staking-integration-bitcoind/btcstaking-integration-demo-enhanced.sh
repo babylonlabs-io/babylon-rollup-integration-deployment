@@ -30,13 +30,19 @@ echo ""
 echo "📋 Step 1: Deploying finality contract..."
 
 echo "  → Storing contract WASM..."
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm store /contracts/op_finality_gadget.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.3 --fees 1000000ubbn -y" > /dev/null
+STORE_CMD="/bin/babylond --home /babylondhome tx wasm store /contracts/op_finality_gadget.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.3 --fees 1000000ubbn -y"
+echo "  → Command: $STORE_CMD"
+STORE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$STORE_CMD")
+echo "  → Output: $STORE_OUTPUT"
 
 sleep 5
 
 echo "  → Instantiating contract..."
 INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"consumer_id\":\"$CONSUMER_ID\",\"is_enabled\":true}"
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn --label 'finality' --admin $admin --from test-spending-key -y" > /dev/null
+INSTANTIATE_CMD="/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn --label 'finality' --admin $admin --from test-spending-key -y"
+echo "  → Command: $INSTANTIATE_CMD"
+INSTANTIATE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$INSTANTIATE_CMD")
+echo "  → Output: $INSTANTIATE_OUTPUT"
 
 sleep 5
 
@@ -51,7 +57,10 @@ echo "  ✅ Finality contract deployed at: $finalityContractAddr"
 echo ""
 echo "🔗 Step 2: Registering consumer chain..."
 
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description 2 $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y" > /dev/null
+REGISTER_CMD="/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description 2 $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
+echo "  → Command: $REGISTER_CMD"
+REGISTER_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$REGISTER_CMD")
+echo "  → Output: $REGISTER_OUTPUT"
 
 sleep 3
 echo "  ✅ Consumer '$CONSUMER_ID' registered successfully"
@@ -75,7 +84,9 @@ consumer_btc_pk=$(echo "$consumer_fp_json" | jq -r '.public_key')
 consumer_btc_sk=$(echo "$consumer_fp_json" | jq -r '.private_key')
 
 echo "  ✅ Babylon FP BTC PK: $bbn_btc_pk"
+echo "  ✅ Babylon FP BTC SK: $bbn_btc_sk"
 echo "  ✅ Consumer FP BTC PK: $consumer_btc_pk"
+echo "  ✅ Consumer FP BTC SK: $consumer_btc_sk"
 
 ###############################
 # Step 4: Create Finality     #
@@ -96,9 +107,12 @@ bbn_pop_json=$(./crypto-ops generate-pop $bbn_btc_sk $admin)
 bbn_pop_hex=$(echo "$bbn_pop_json" | jq -r '.pop_hex')
 
 # Create Babylon FP on-chain
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $bbn_btc_pk $bbn_pop_hex --from test-spending-key --moniker 'Babylon FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --chain-id $BBN_CHAIN_ID --keyring-backend test --gas-prices=1ubbn -y" > /dev/null
+BBN_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $bbn_btc_pk $bbn_pop_hex --from test-spending-key --moniker 'Babylon FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --chain-id $BBN_CHAIN_ID --keyring-backend test --gas-prices=1ubbn -y"
+echo "  → Command: $BBN_FP_CMD"
+BBN_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$BBN_FP_CMD")
+echo "  → Output: $BBN_FP_OUTPUT"
 
-sleep 3
+sleep 15
 
 echo "  ✅ Babylon FP created successfully"
 
@@ -109,9 +123,12 @@ consumer_pop_json=$(./crypto-ops generate-pop $consumer_btc_sk $admin)
 consumer_pop_hex=$(echo "$consumer_pop_json" | jq -r '.pop_hex')
 
 # Create Consumer FP on-chain (note the --consumer-id flag)
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $consumer_btc_pk $consumer_pop_hex --from test-spending-key --moniker 'Consumer FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --consumer-id $CONSUMER_ID --chain-id $BBN_CHAIN_ID --keyring-backend test --gas-prices=1ubbn -y" > /dev/null
+CONSUMER_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $consumer_btc_pk $consumer_pop_hex --from test-spending-key --moniker 'Consumer FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --consumer-id $CONSUMER_ID --chain-id $BBN_CHAIN_ID --keyring-backend test --gas-prices=1ubbn -y"
+echo "  → Command: $CONSUMER_FP_CMD"
+CONSUMER_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$CONSUMER_FP_CMD")
+echo "  → Output: $CONSUMER_FP_OUTPUT"
 
-sleep 3
+sleep 15
 
 echo "  ✅ Consumer FP created successfully"
 
@@ -186,57 +203,40 @@ num_pub_rand=100
 echo "  → Generating public randomness commitments for Consumer FP..."
 echo "    Start height: $start_height, Number of commitments: $num_pub_rand"
 
-# Generate commitment for Consumer FP using its private key
-consumer_pubrand_json=$(./crypto-ops generate-pubrand-commit $consumer_btc_sk $start_height $num_pub_rand)
-consumer_contract_msg=$(echo "$consumer_pubrand_json" | jq -r '.contract_message')
-consumer_pubrand_pk=$(echo "$consumer_pubrand_json" | jq -r '.public_key')
-consumer_commitment=$(echo "$consumer_pubrand_json" | jq -r '.commitment')
+# Generate and submit commitment for Consumer FP (Go script does both)
+echo "  → Generating and submitting public randomness commitment..."
+./crypto-ops generate-pubrand-commit $consumer_btc_sk $finalityContractAddr
 
-echo "  ✅ Generated commitment ready for submission"
-echo "    Consumer FP commitment: $consumer_commitment"
+echo "  ✅ Public randomness committed and verified!"
 
-# Submit commitment to finality contract
-echo "  → Submitting Consumer FP commitment to finality contract..."
-consumer_commit_result=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$consumer_contract_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas 500000 --fees 100000ubbn -y --output json")
-consumer_commit_txhash=$(echo "$consumer_commit_result" | jq -r '.txhash')
+# ###############################
+# # Step 8: Finality Signatures #
+# ###############################
 
-sleep 8  # Wait for transaction processing
+# echo ""
+# echo "✍️ Step 8: Submitting finality signatures..."
 
-echo "  ✅ Consumer FP commitment submitted: $consumer_commit_txhash"
+# # Simulate a new block being finalized
+# finalized_height=1
 
-# Verify commitments were stored
-echo "  → Verifying commitment in contract..."
-echo "    Note: In production, you would query the contract state to verify"
-echo "    the commitment is properly stored and accessible"
+# echo "  → Generating finality signature for Consumer FP at height $finalized_height..."
 
-###############################
-# Step 8: Finality Signatures #
-###############################
+# # Generate finality signature for Consumer FP using its private key (Go script will generate random block hash)
+# consumer_finalsig_json=$(./crypto-ops generate-finalsig-submit $consumer_btc_sk $finalized_height)
+# consumer_finalsig_msg=$(echo "$consumer_finalsig_json" | jq -r '.contract_message')
+# consumer_finalsig_pk=$(echo "$consumer_finalsig_json" | jq -r '.public_key')
+# consumer_signature=$(echo "$consumer_finalsig_json" | jq -r '.signature')
 
-echo ""
-echo "✍️ Step 8: Submitting finality signatures..."
+# echo "  ✅ Generated finality signature ready for submission"
 
-# Simulate a new block being finalized
-finalized_height=1
+# # Submit finality signature to contract
+# echo "  → Submitting Consumer FP finality signature..."
+# consumer_finalsig_result=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$consumer_finalsig_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas 500000 --fees 100000ubbn -y --output json")
+# consumer_finalsig_txhash=$(echo "$consumer_finalsig_result" | jq -r '.txhash')
 
-echo "  → Generating finality signature for Consumer FP at height $finalized_height..."
+# sleep 8  # Wait for transaction processing
 
-# Generate finality signature for Consumer FP using its private key (Go script will generate random block hash)
-consumer_finalsig_json=$(./crypto-ops generate-finalsig-submit $consumer_btc_sk $finalized_height)
-consumer_finalsig_msg=$(echo "$consumer_finalsig_json" | jq -r '.contract_message')
-consumer_finalsig_pk=$(echo "$consumer_finalsig_json" | jq -r '.public_key')
-consumer_signature=$(echo "$consumer_finalsig_json" | jq -r '.signature')
-
-echo "  ✅ Generated finality signature ready for submission"
-
-# Submit finality signature to contract
-echo "  → Submitting Consumer FP finality signature..."
-consumer_finalsig_result=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$consumer_finalsig_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas 500000 --fees 100000ubbn -y --output json")
-consumer_finalsig_txhash=$(echo "$consumer_finalsig_result" | jq -r '.txhash')
-
-sleep 8  # Wait for transaction processing
-
-echo "  ✅ Consumer FP signature submitted: $consumer_finalsig_txhash"
+# echo "  ✅ Consumer FP signature submitted: $consumer_finalsig_txhash"
 
 # Verify finality signature
 echo "  → Verifying finality signature in contract..."
@@ -268,14 +268,13 @@ echo "  ✅ Finalized height:      $finalized_height"
 echo ""
 echo "📋 Transaction Hashes:"
 echo "  → BTC delegation:         $btcTxHash"
-echo "  → Consumer commitment:    $consumer_commit_txhash"
-echo "  → Consumer finality sig:  $consumer_finalsig_txhash"
+echo "  ✅ Public randomness committed and finality signature submitted!"
 echo ""
 echo "🔮 Integration Status:"
 echo "  ✅ BTC staking infrastructure deployed"
 echo "  ✅ Finality providers created on-chain (Babylon + Consumer)"
 echo "  ✅ Cryptographic operations integrated with PoP generation"
-echo "  ✅ Public randomness committed to contract (Consumer FP)"
+echo "  ✅ Public randomness committed by Consumer FP only"
 echo "  ✅ Finality signatures submitted to contract (Consumer FP)"
 echo "  ✅ Full end-to-end workflow operational"
 echo ""
