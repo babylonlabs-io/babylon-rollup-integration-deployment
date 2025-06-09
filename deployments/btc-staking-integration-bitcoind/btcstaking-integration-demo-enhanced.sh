@@ -209,40 +209,6 @@ echo "  → Generating and submitting public randomness commitment..."
 
 echo "  ✅ Public randomness committed and verified!"
 
-# ###############################
-# # Step 8: Finality Signatures #
-# ###############################
-
-# echo ""
-# echo "✍️ Step 8: Submitting finality signatures..."
-
-# # Simulate a new block being finalized
-# finalized_height=1
-
-# echo "  → Generating finality signature for Consumer FP at height $finalized_height..."
-
-# # Generate finality signature for Consumer FP using its private key (Go script will generate random block hash)
-# consumer_finalsig_json=$(./crypto-ops generate-finalsig-submit $consumer_btc_sk $finalized_height)
-# consumer_finalsig_msg=$(echo "$consumer_finalsig_json" | jq -r '.contract_message')
-# consumer_finalsig_pk=$(echo "$consumer_finalsig_json" | jq -r '.public_key')
-# consumer_signature=$(echo "$consumer_finalsig_json" | jq -r '.signature')
-
-# echo "  ✅ Generated finality signature ready for submission"
-
-# # Submit finality signature to contract
-# echo "  → Submitting Consumer FP finality signature..."
-# consumer_finalsig_result=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$consumer_finalsig_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas 500000 --fees 100000ubbn -y --output json")
-# consumer_finalsig_txhash=$(echo "$consumer_finalsig_result" | jq -r '.txhash')
-
-# sleep 8  # Wait for transaction processing
-
-# echo "  ✅ Consumer FP signature submitted: $consumer_finalsig_txhash"
-
-# Verify finality signature
-echo "  → Verifying finality signature in contract..."
-echo "    Note: In production, you would query the contract to confirm"
-echo "    finality status for the submitted block height"
-
 ###############################
 # Demo Summary                #
 ###############################
