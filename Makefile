@@ -7,9 +7,9 @@ start-deployment-btc-staking-integration-bitcoind-demo:
 		NUM_VALIDATORS=${NUM_VALIDATORS} \
 		start-deployment-btc-staking-integration-bitcoind-demo
 
-run-go-demo:
+run-demo:
 	@$(MAKE) -C $(CURDIR)/deployments/btc-staking-integration-bitcoind \
-		run-go-demo
+		run-demo
 
 stop-deployment-btc-staking-integration-bitcoind:
 	@$(MAKE) -C $(CURDIR)/deployments/btc-staking-integration-bitcoind \

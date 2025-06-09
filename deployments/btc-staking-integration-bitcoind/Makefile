@@ -39,10 +39,10 @@ stop-deployment-btc-staking-integration-bitcoind:
 start-deployment-btc-staking-integration-bitcoind-demo: start-deployment-btc-staking-integration-bitcoind
 	./btcstaking-integration-demo.sh
 
-run-go-demo: start-deployment-btc-staking-integration-bitcoind
-	@echo "🚀 Running BTC Staking Integration Demo (Go Implementation)..."
-	cd btc-staking-demo && go run btc-staking-demo.go
+run-demo: start-deployment-btc-staking-integration-bitcoind
+	@echo "🚀 Running BTC Staking Integration Demo (Bash + Go Implementation)..."
+	./btcstaking-integration-demo-enhanced.sh
 
-run-go-demo-only:
-	@echo "🚀 Running BTC Staking Integration Demo (assuming deployment is ready)..."
-	cd btc-staking-demo && go run btc-staking-demo.go
+run-demo-only:
+	@echo "🚀 Running BTC Staking Integration Demo (Bash + Go Implementation, assuming deployment is ready)..."
+	./btcstaking-integration-demo-enhanced.sh
