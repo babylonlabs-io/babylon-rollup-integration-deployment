@@ -78,11 +78,56 @@ echo "  ✅ Babylon FP BTC PK: $bbn_btc_pk"
 echo "  ✅ Consumer FP BTC PK: $consumer_btc_pk"
 
 ###############################
-# Step 4: Stake BTC           #
+# Step 4: Create Finality     #
+# Providers                   #
 ###############################
 
 echo ""
-echo "₿ Step 4: Creating BTC delegation..."
+echo "👥 Step 4: Creating finality providers on-chain..."
+
+# Get admin address for PoP generation
+admin=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json | jq -r '.address'")
+echo "  → Using admin address for PoP: $admin"
+
+echo "  → Creating Babylon Finality Provider..."
+
+# Generate PoP for Babylon FP using crypto-ops
+bbn_pop_json=$(./crypto-ops generate-pop $bbn_btc_sk $admin)
+bbn_pop_hex=$(echo "$bbn_pop_json" | jq -r '.pop_hex')
+
+# Create Babylon FP on-chain
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $bbn_btc_pk $bbn_pop_hex --from test-spending-key --moniker 'Babylon FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --chain-id $BBN_CHAIN_ID --keyring-backend test --gas-prices=1ubbn -y" > /dev/null
+
+sleep 3
+
+echo "  ✅ Babylon FP created successfully"
+
+echo "  → Creating Consumer Finality Provider..."
+
+# Generate PoP for Consumer FP using crypto-ops
+consumer_pop_json=$(./crypto-ops generate-pop $consumer_btc_sk $admin)
+consumer_pop_hex=$(echo "$consumer_pop_json" | jq -r '.pop_hex')
+
+# Create Consumer FP on-chain (note the --consumer-id flag)
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $consumer_btc_pk $consumer_pop_hex --from test-spending-key --moniker 'Consumer FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --consumer-id $CONSUMER_ID --chain-id $BBN_CHAIN_ID --keyring-backend test --gas-prices=1ubbn -y" > /dev/null
+
+sleep 3
+
+echo "  ✅ Consumer FP created successfully"
+
+# Verify FPs were created
+echo "  → Verifying finality providers..."
+bbn_fp_count=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q btcstaking finality-providers --output json | jq '.finality_providers | length'")
+consumer_fp_count=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q btcstkconsumer finality-providers $CONSUMER_ID --output json | jq '.finality_providers | length'")
+echo "  ✅ Babylon finality providers: $bbn_fp_count"
+echo "  ✅ Consumer finality providers: $consumer_fp_count"
+
+###############################
+# Step 5: Stake BTC           #
+###############################
+
+echo ""
+echo "₿ Step 5: Creating BTC delegation..."
 
 echo "  → Getting available BTC addresses..."
 delAddrs=($(docker exec btc-staker /bin/sh -c '/bin/stakercli dn list-outputs | jq -r ".outputs[].address" | sort | uniq'))
@@ -103,11 +148,11 @@ fi
 echo "  ✅ BTC delegation created: $btcTxHash"
 
 ###############################
-# Step 5: Wait for Activation #
+# Step 6: Wait for Activation #
 ###############################
 
 echo ""
-echo "⏳ Step 5: Waiting for delegation activation..."
+echo "⏳ Step 6: Waiting for delegation activation..."
 
 echo "  → Monitoring delegation status..."
 for i in {1..30}; do
@@ -128,11 +173,11 @@ if [ "$activeDelegations" -ne 1 ]; then
 fi
 
 ###############################
-# Step 6: Public Randomness   #
+# Step 7: Public Randomness   #
 ###############################
 
 echo ""
-echo "🎲 Step 6: Committing public randomness..."
+echo "🎲 Step 7: Committing public randomness..."
 
 # Generate public randomness commitments using Go tool
 start_height=1
@@ -165,11 +210,11 @@ echo "    Note: In production, you would query the contract state to verify"
 echo "    the commitment is properly stored and accessible"
 
 ###############################
-# Step 7: Finality Signatures #
+# Step 8: Finality Signatures #
 ###############################
 
 echo ""
-echo "✍️ Step 7: Submitting finality signatures..."
+echo "✍️ Step 8: Submitting finality signatures..."
 
 # Simulate a new block being finalized
 finalized_height=1
@@ -211,10 +256,13 @@ echo "  ✅ Finality contract:     $finalityContractAddr"
 echo "  ✅ Consumer ID:           $CONSUMER_ID"  
 echo "  ✅ BTC delegation:        $btcTxHash"
 echo "  ✅ Active delegations:    $activeDelegations"
+echo "  ✅ Finality providers:    $bbn_fp_count + $consumer_fp_count"
 echo ""
 echo "🔐 Cryptographic Operations:"
 echo "  ✅ Babylon FP BTC PK:     $bbn_btc_pk"
 echo "  ✅ Consumer FP BTC PK:     $consumer_btc_pk"
+echo "  ✅ Babylon FP PoP:        Generated & submitted"
+echo "  ✅ Consumer FP PoP:       Generated & submitted"
 echo "  ✅ Pub randomness range:  $start_height-$((start_height + num_pub_rand - 1))"
 echo "  ✅ Finalized height:      $finalized_height"
 echo ""
@@ -225,13 +273,15 @@ echo "  → Consumer finality sig:  $consumer_finalsig_txhash"
 echo ""
 echo "🔮 Integration Status:"
 echo "  ✅ BTC staking infrastructure deployed"
-echo "  ✅ Cryptographic operations integrated"
+echo "  ✅ Finality providers created on-chain (Babylon + Consumer)"
+echo "  ✅ Cryptographic operations integrated with PoP generation"
 echo "  ✅ Public randomness committed to contract (Consumer FP)"
 echo "  ✅ Finality signatures submitted to contract (Consumer FP)"
 echo "  ✅ Full end-to-end workflow operational"
 echo ""
-echo "Perfect! Clean separation with proper key management:"
-echo "  🎯 Go generates contract messages using SAME FP private keys"
+echo "Perfect! Clean separation with proper FP management:"
+echo "  🎯 Go generates all crypto operations (keys, PoP, randomness, signatures)"
 echo "  🎯 Bash handles orchestration & blockchain interactions"
+echo "  🎯 Both Babylon & Consumer FPs created on-chain with PoP"
 echo "  🎯 Public randomness committed by Consumer FP only"
 echo "  🎯 All operations cryptographically consistent!" 

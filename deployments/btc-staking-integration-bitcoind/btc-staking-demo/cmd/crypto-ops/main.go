@@ -38,6 +38,30 @@ type FinalitySignatureSubmission struct {
 	Signature       string `json:"signature"`
 }
 
+// ProofOfPossession represents the output for PoP generation
+type ProofOfPossession struct {
+	PopHex string `json:"pop_hex"`
+}
+
+// Generate Proof of Possession exactly like datagen.NewPoPBTC
+func generateProofOfPossession(addr sdk.AccAddress, btcSK *btcec.PrivateKey) (*ProofOfPossession, error) {
+	// Use datagen.NewPoPBTC exactly like the reference implementation
+	pop, err := datagen.NewPoPBTC(addr, btcSK)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate PoP: %w", err)
+	}
+
+	// Convert PoP to hex string exactly like the reference code does
+	popHex, err := pop.ToHexStr()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert PoP to hex: %w", err)
+	}
+
+	return &ProofOfPossession{
+		PopHex: popHex,
+	}, nil
+}
+
 // Generate public randomness commitment using proper Babylon datagen
 func generatePublicRandomnessCommitment(r *mathrand.Rand, fpSk *btcec.PrivateKey, startHeight, numPubRand uint64) (*PublicRandomnessCommitment, error) {
 	// Use the proper Babylon datagen function exactly like the working code
@@ -48,7 +72,8 @@ func generatePublicRandomnessCommitment(r *mathrand.Rand, fpSk *btcec.PrivateKey
 
 	// Get the public key hex
 	fpPubKey := fpSk.PubKey()
-	fpPubKeyHex := hex.EncodeToString(fpPubKey.SerializeCompressed())
+	bip340PK := bbn.NewBIP340PubKeyFromBTCPK(fpPubKey)
+	fpPubKeyHex := bip340PK.MarshalHex()
 
 	// Create the contract message exactly like the working implementation
 	contractMsg := map[string]interface{}{
@@ -97,7 +122,8 @@ func generateFinalitySignatureSubmission(r *mathrand.Rand, fpSk *btcec.PrivateKe
 
 	// Get the public key hex
 	fpPubKey := fpSk.PubKey()
-	fpPubKeyHex := hex.EncodeToString(fpPubKey.SerializeCompressed())
+	bip340PK := bbn.NewBIP340PubKeyFromBTCPK(fpPubKey)
+	fpPubKeyHex := bip340PK.MarshalHex()
 
 	// Create finality signature message for the contract (exactly like the tests)
 	proof := randListInfo.ProofList[idx].ToProto()
@@ -136,17 +162,19 @@ func printUsage() {
 
 Commands:
   generate-keypair                                      - Generate a new BTC key pair
+  generate-pop <private_key_hex> <babylon_address>      - Generate Proof of Possession for FP creation
   generate-pubrand-commit <private_key_hex> <start_height> <num_pub_rand> - Generate public randomness commitment
   generate-finalsig-submit <private_key_hex> <height> [blockhash] - Generate finality signature submission
   
 Examples:
   %s generate-keypair
+  %s generate-pop abc123... bbn1...
   %s generate-pubrand-commit abc123... 100 50
   %s generate-finalsig-submit abc123... 150 deadbeef...
   
 Output: All commands output JSON that can be parsed by bash scripts
   
-`, os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 func main() {
@@ -166,22 +194,60 @@ func main() {
 
 	switch command {
 	case "generate-keypair":
-		// Generate a proper BTC private key
-		fpSk, err := btcec.NewPrivateKey()
+		// Generate random BTC key pair exactly like the tests do
+		fpSk, _, err := datagen.GenRandomBTCKeyPair(r)
 		if err != nil {
-			log.Fatalf("Failed to generate private key: %v", err)
+			log.Fatalf("Failed to generate BTC key pair: %v", err)
 		}
 
-		fpPubKey := fpSk.PubKey()
-		fpPubKeyHex := hex.EncodeToString(fpPubKey.SerializeCompressed())
+		// Follow exact test pattern: btcPK -> bip340PK -> MarshalHex()
+		btcPK := fpSk.PubKey()
+		bip340PK := bbn.NewBIP340PubKeyFromBTCPK(btcPK)
+		btcPkHex := bip340PK.MarshalHex()
 		fpPrivKeyHex := hex.EncodeToString(fpSk.Serialize())
 
 		output := map[string]string{
-			"public_key":  fpPubKeyHex,
+			"public_key":  btcPkHex,
 			"private_key": fpPrivKeyHex,
 		}
 
 		jsonOutput, err := json.Marshal(output)
+		if err != nil {
+			log.Fatalf("Failed to marshal output: %v", err)
+		}
+
+		fmt.Println(string(jsonOutput))
+
+	case "generate-pop":
+		if len(os.Args) < 4 {
+			fmt.Println("Error: Missing arguments for generate-pop")
+			printUsage()
+			os.Exit(1)
+		}
+
+		privKeyHex := os.Args[2]
+		babylonAddr := os.Args[3]
+
+		// Parse the private key
+		privKeyBytes, err := hex.DecodeString(privKeyHex)
+		if err != nil {
+			log.Fatalf("Invalid private key hex: %v", err)
+		}
+
+		fpSk, _ := btcec.PrivKeyFromBytes(privKeyBytes)
+
+		// Parse the Babylon address
+		addr, err := sdk.AccAddressFromBech32(babylonAddr)
+		if err != nil {
+			log.Fatalf("Invalid Babylon address: %v", err)
+		}
+
+		pop, err := generateProofOfPossession(addr, fpSk)
+		if err != nil {
+			log.Fatalf("Failed to generate proof of possession: %v", err)
+		}
+
+		jsonOutput, err := json.Marshal(pop)
 		if err != nil {
 			log.Fatalf("Failed to marshal output: %v", err)
 		}
