@@ -8,6 +8,7 @@ import (
 	"log"
 	mathrand "math/rand"
 	"os"
+	"strconv"
 	"time"
 
 	"os/exec"
@@ -24,13 +25,8 @@ import (
 
 const (
 	BBN_CHAIN_ID     = "chain-test"
-	CONSUMER_ID      = "consumer-id"
-	WASM_FILE        = "/contracts/op_finality_gadget.wasm"
 	KEYRING_BACKEND  = "test"
 	KEY_NAME         = "test-spending-key"
-	GAS_ADJUSTMENT   = "1.3"
-	FEES             = "1000000ubbn"
-	INSTANTIATE_FEES = "100000ubbn"
 )
 
 func execDockerCommand(container string, command ...string) (string, error) {
@@ -88,46 +84,7 @@ func generateProofOfPossession(addr sdk.AccAddress, btcSK *btcec.PrivateKey) (*P
 	}, nil
 }
 
-// Generate public randomness commitment using proper Babylon datagen
-func generatePublicRandomnessCommitment(r *mathrand.Rand, fpSk *btcec.PrivateKey, startHeight, numPubRand uint64) (*PublicRandomnessCommitment, error) {
-	// Use the proper Babylon datagen function exactly like the working code
-	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, fpSk, startHeight, numPubRand)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate public randomness list: %w", err)
-	}
-
-	// Get the public key hex
-	fpPubKey := fpSk.PubKey()
-	bip340PK := bbn.NewBIP340PubKeyFromBTCPK(fpPubKey)
-	fpPubKeyHex := bip340PK.MarshalHex()
-
-	// Create the contract message exactly like the working implementation
-	contractMsg := map[string]interface{}{
-		"commit_public_randomness": map[string]interface{}{
-			"fp_pubkey_hex": fpPubKeyHex,
-			"start_height":  startHeight,
-			"num_pub_rand":  numPubRand,
-			"commitment":    randListInfo.Commitment,
-			"signature":     msgCommitPubRandList.Sig.MustToBTCSig().Serialize(),
-		},
-	}
-
-	contractMsgBytes, err := json.Marshal(contractMsg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal contract message: %w", err)
-	}
-
-	return &PublicRandomnessCommitment{
-		ContractMessage: string(contractMsgBytes),
-		PublicKey:       fpPubKeyHex,
-		StartHeight:     startHeight,
-		NumPubRand:      numPubRand,
-		Commitment:      hex.EncodeToString(randListInfo.Commitment),
-		Signature:       hex.EncodeToString(msgCommitPubRandList.Sig.MustToBTCSig().Serialize()),
-	}, nil
-}
-
-func commitPublicRandomness(r *mathrand.Rand, contractAddr string, consumerFpSk *btcec.PrivateKey) (*datagen.RandListInfo, error) {
+func commitPublicRandomness(r *mathrand.Rand, contractAddr string, consumerFpSk *btcec.PrivateKey, startHeight, numPubRand uint64) (*datagen.RandListInfo, error) {
 	fmt.Println("  → Generating public randomness list...")
 
 	// Follow exact test pattern: btcPK -> bip340PK -> MarshalHex()
@@ -135,9 +92,8 @@ func commitPublicRandomness(r *mathrand.Rand, contractAddr string, consumerFpSk 
 	bip340PK := bbn.NewBIP340PubKeyFromBTCPK(btcPK)
 	consumerBtcPk := bip340PK.MarshalHex()
 
-	// Generate random public randomness list exactly like the tests do
-	numPubRand := uint64(100)
-	commitStartHeight := uint64(1)
+	// Use the provided parameters
+	commitStartHeight := startHeight
 
 	// Generate the message exactly like datagen.GenRandomMsgCommitPubRandList
 	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, consumerFpSk, commitStartHeight, numPubRand)
@@ -395,14 +351,12 @@ func printUsage() {
 Commands:
   generate-keypair                                      - Generate a new BTC key pair
   generate-pop <private_key_hex> <babylon_address>      - Generate Proof of Possession for FP creation
-  generate-pubrand-commit <private_key_hex> <start_height> <num_pub_rand> - Generate public randomness commitment
-  generate-finalsig-submit <private_key_hex> <height> [blockhash] - Generate finality signature submission
+  commit-and-finalize <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Commit pub randomness and submit finality signature
   
 Examples:
   %s generate-keypair
   %s generate-pop abc123... bbn1...
-  %s generate-pubrand-commit abc123... 100 50
-  %s generate-finalsig-submit abc123... 150 deadbeef...
+  %s commit-and-finalize abc123... bbn1contract... 1 100
   
 Output: All commands output JSON that can be parsed by bash scripts
   
@@ -486,15 +440,17 @@ func main() {
 
 		fmt.Println(string(jsonOutput))
 
-	case "generate-pubrand-commit":
-		if len(os.Args) < 4 {
-			fmt.Println("Error: Missing arguments for generate-pubrand-commit")
+	case "commit-and-finalize":
+		if len(os.Args) < 6 {
+			fmt.Println("Error: Missing arguments for commit-and-finalize")
 			printUsage()
 			os.Exit(1)
 		}
 
 		privKeyHex := os.Args[2]
 		contractAddr := os.Args[3]
+		startHeightStr := os.Args[4]
+		numPubRandStr := os.Args[5]
 
 		// Parse the private key
 		privKeyBytes, err := hex.DecodeString(privKeyHex)
@@ -504,7 +460,18 @@ func main() {
 
 		fpSk, _ := btcec.PrivKeyFromBytes(privKeyBytes)
 
-		randListInfo, err := commitPublicRandomness(r, contractAddr, fpSk)
+		// Parse start height and num pub rand
+		startHeight, err := strconv.ParseUint(startHeightStr, 10, 64)
+		if err != nil {
+			log.Fatalf("Invalid start height: %v", err)
+		}
+
+		numPubRand, err := strconv.ParseUint(numPubRandStr, 10, 64)
+		if err != nil {
+			log.Fatalf("Invalid num pub rand: %v", err)
+		}
+
+		randListInfo, err := commitPublicRandomness(r, contractAddr, fpSk, startHeight, numPubRand)
 		if err != nil {
 			log.Fatalf("Failed to generate public randomness commitment: %v", err)
 		}
