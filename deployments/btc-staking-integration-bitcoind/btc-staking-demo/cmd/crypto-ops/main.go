@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	mathrand "math/rand"
 	"os"
@@ -250,14 +251,36 @@ func commitPublicRandomness(r *mathrand.Rand, contractAddr string, consumerFpSk 
 	time.Sleep(8 * time.Second) // Increased delay for transaction processing
 
 	// Query the finality contract to verify the commitment was stored
-	fmt.Fprintln(os.Stderr, "  → Verifying commitment was stored...")
-	err = verifyPublicRandomnessCommitment(contractAddr, consumerBtcPk, commitStartHeight, numPubRand, randListInfo.Commitment)
+	fmt.Fprintln(os.Stderr, "  → Verifying commitment was stored (with retry)...")
+	err = verifyPublicRandomnessCommitmentWithRetry(contractAddr, consumerBtcPk, commitStartHeight, numPubRand, randListInfo.Commitment, 5, 3*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("failed to verify commitment: %v", err)
+		return nil, fmt.Errorf("failed to verify commitment after retries: %v", err)
 	}
 
 	// Return the randListInfo for use in finality signatures
 	return randListInfo, nil
+}
+
+func verifyPublicRandomnessCommitmentWithRetry(contractAddr, consumerBtcPk string, expectedStartHeight, expectedNumPubRand uint64, expectedCommitment []byte, maxRetries int, retryInterval time.Duration) error {
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		fmt.Fprintf(os.Stderr, "    → Verification attempt %d/%d...\n", attempt, maxRetries)
+
+		err := verifyPublicRandomnessCommitment(contractAddr, consumerBtcPk, expectedStartHeight, expectedNumPubRand, expectedCommitment)
+		if err == nil {
+			fmt.Fprintf(os.Stderr, "    ✅ Verification succeeded on attempt %d\n", attempt)
+			return nil
+		}
+
+		lastErr = err
+		if attempt < maxRetries {
+			fmt.Fprintf(os.Stderr, "    ⏳ Attempt %d failed, retrying in %v... (Error: %v)\n", attempt, retryInterval, err)
+			time.Sleep(retryInterval)
+		}
+	}
+
+	return fmt.Errorf("verification failed after %d attempts, last error: %v", maxRetries, lastErr)
 }
 
 func verifyPublicRandomnessCommitment(contractAddr, consumerBtcPk string, expectedStartHeight, expectedNumPubRand uint64, expectedCommitment []byte) error {
@@ -329,7 +352,7 @@ func verifyPublicRandomnessCommitment(contractAddr, consumerBtcPk string, expect
 	return nil
 }
 
-func submitFinalitySignature(r *mathrand.Rand, contractAddr string, randListInfo *datagen.RandListInfo, consumerFpSk *btcec.PrivateKey, blockHeight uint64) (string, error) {
+func submitFinalitySignature(r *mathrand.Rand, contractAddr string, randListInfo *datagen.RandListInfo, consumerFpSk *btcec.PrivateKey, blockHeight uint64) error {
 	fmt.Fprintln(os.Stderr, "  → Generating mock block to vote on...")
 
 	// Follow exact test pattern: btcPK -> bip340PK -> MarshalHex()
@@ -350,18 +373,18 @@ func submitFinalitySignature(r *mathrand.Rand, contractAddr string, randListInfo
 
 	// Calculate randomness index (assuming randomness starts from height 1)
 	if blockHeight < 1 {
-		return "", fmt.Errorf("block height must be >= 1, got %d", blockHeight)
+		return fmt.Errorf("block height must be >= 1, got %d", blockHeight)
 	}
 	randIndex := int(blockHeight - 1)
 	if randIndex >= len(randListInfo.SRList) {
-		return "", fmt.Errorf("block height %d requires randomness index %d, but only %d randomness values available", blockHeight, randIndex, len(randListInfo.SRList))
+		return fmt.Errorf("block height %d requires randomness index %d, but only %d randomness values available", blockHeight, randIndex, len(randListInfo.SRList))
 	}
 
 	// Generate EOTS signature using the calculated randomness index
 	fmt.Fprintf(os.Stderr, "  → Generating EOTS signature using randomness index %d for height %d...\n", randIndex, blockHeight)
 	sig, err := eots.Sign(consumerFpSk, randListInfo.SRList[randIndex], msgToSign)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate EOTS signature: %v", err)
+		return fmt.Errorf("failed to generate EOTS signature: %v", err)
 	}
 	eotsSig := bbn.NewSchnorrEOTSSigFromModNScalar(sig)
 
@@ -385,7 +408,7 @@ func submitFinalitySignature(r *mathrand.Rand, contractAddr string, randListInfo
 
 	finalitySigMsgBytes, err := json.Marshal(finalitySigMsg)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal finality signature message: %v", err)
+		return fmt.Errorf("failed to marshal finality signature message: %v", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "  → Submitting finality signature for block height %d...\n", blockHeight)
@@ -397,22 +420,43 @@ func submitFinalitySignature(r *mathrand.Rand, contractAddr string, randListInfo
 		finalitySigMsgStr, "--from", KEY_NAME, "--chain-id", BBN_CHAIN_ID,
 		"--keyring-backend", KEYRING_BACKEND, "--gas", "500000", "--fees", "100000ubbn", "-y", "--output", "json")
 	if err != nil {
-		return "", fmt.Errorf("failed to submit finality signature: %v", err)
+		return fmt.Errorf("failed to submit finality signature: %v", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "  → Submission result: %s\n", output)
-	time.Sleep(5 * time.Second) // Wait for transaction processing
 
-	// Verify the signature was recorded by querying block voters
-	fmt.Fprintln(os.Stderr, "  → Verifying finality signature was recorded...")
-	err = verifyFinalitySignature(contractAddr, blockToVote.Height, blockToVote.AppHash, consumerBtcPk)
+	// Verify the signature was recorded by querying block voters with retry logic
+	fmt.Fprintln(os.Stderr, "  → Verifying finality signature was recorded (with retry)...")
+	err = verifyFinalitySignatureWithRetry(contractAddr, blockToVote.Height, blockToVote.AppHash, consumerBtcPk, 5, 3*time.Second)
 	if err != nil {
-		return "", fmt.Errorf("failed to verify finality signature: %v", err)
+		return fmt.Errorf("failed to verify finality signature after retries: %v", err)
+	}
+	fmt.Fprintf(os.Stderr, "Block height %d signed using randomness index %d\n", blockHeight, randIndex)
+
+	// Success - no return value needed
+	return nil
+}
+
+func verifyFinalitySignatureWithRetry(contractAddr string, blockHeight uint64, blockAppHash []byte, expectedVoter string, maxRetries int, retryInterval time.Duration) error {
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		fmt.Fprintf(os.Stderr, "    → Verification attempt %d/%d...\n", attempt, maxRetries)
+
+		err := verifyFinalitySignature(contractAddr, blockHeight, blockAppHash, expectedVoter)
+		if err == nil {
+			fmt.Fprintf(os.Stderr, "    ✅ Verification succeeded on attempt %d\n", attempt)
+			return nil
+		}
+
+		lastErr = err
+		if attempt < maxRetries {
+			fmt.Fprintf(os.Stderr, "    ⏳ Attempt %d failed, retrying in %v... (Error: %v)\n", attempt, retryInterval, err)
+			time.Sleep(retryInterval)
+		}
 	}
 
-	// Return summary information
-	finalitySigSummary := fmt.Sprintf("Block height %d signed using randomness index %d", blockHeight, randIndex)
-	return finalitySigSummary, nil
+	return fmt.Errorf("verification failed after %d attempts, last error: %v", maxRetries, lastErr)
 }
 
 func verifyFinalitySignature(contractAddr string, blockHeight uint64, blockAppHash []byte, expectedVoter string) error {
@@ -470,14 +514,14 @@ Commands:
   generate-keypair                                      - Generate a new BTC key pair
   generate-pop <private_key_hex> <babylon_address>      - Generate Proof of Possession for FP creation
   commit-pub-rand <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Commit pub randomness only
-  submit-finality-sig <private_key_hex> <contract_addr> <rand_list_info_json> <block_height> - Submit finality signature only
+  submit-finality-sig <private_key_hex> <contract_addr> <block_height> - Submit finality signature only (reads rand_list_info_json from stdin)
   commit-and-finalize <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Commit pub randomness and submit finality signature (legacy)
   
 Examples:
   %s generate-keypair
   %s generate-pop abc123... bbn1...
   %s commit-pub-rand abc123... bbn1contract... 1 100
-  %s submit-finality-sig abc123... bbn1contract... '{...randListInfoJson...}' 1
+  echo '{...randListInfoJson...}' | %s submit-finality-sig abc123... bbn1contract... 1
   %s commit-and-finalize abc123... bbn1contract... 1 100
   
 Output: All commands output JSON that can be parsed by bash scripts
@@ -611,7 +655,7 @@ func main() {
 		fmt.Println(string(jsonOutput))
 
 	case "submit-finality-sig":
-		if len(os.Args) < 6 {
+		if len(os.Args) < 5 {
 			fmt.Println("Error: Missing arguments for submit-finality-sig")
 			printUsage()
 			os.Exit(1)
@@ -619,8 +663,7 @@ func main() {
 
 		privKeyHex := os.Args[2]
 		contractAddr := os.Args[3]
-		randListInfoJson := os.Args[4]
-		blockHeightStr := os.Args[5]
+		blockHeightStr := os.Args[4]
 
 		// Parse the private key
 		privKeyBytes, err := hex.DecodeString(privKeyHex)
@@ -636,9 +679,16 @@ func main() {
 			log.Fatalf("Invalid block height: %v", err)
 		}
 
+		// Read randListInfo from stdin instead of command line to avoid "Argument list too long"
+		fmt.Fprintln(os.Stderr, "  → Reading randomness data from stdin...")
+		stdinBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatalf("Failed to read from stdin: %v", err)
+		}
+
 		// Parse randListInfo
 		var serializable SerializableRandListInfo
-		if err := json.Unmarshal([]byte(randListInfoJson), &serializable); err != nil {
+		if err := json.Unmarshal(stdinBytes, &serializable); err != nil {
 			log.Fatalf("Failed to parse randListInfo: %v", err)
 		}
 
@@ -647,21 +697,12 @@ func main() {
 			log.Fatalf("Failed to convert serializable to randListInfo: %v", err)
 		}
 
-		result, err := submitFinalitySignature(r, contractAddr, randListInfo, fpSk, blockHeight)
+		err = submitFinalitySignature(r, contractAddr, randListInfo, fpSk, blockHeight)
 		if err != nil {
 			log.Fatalf("Failed to submit finality signature: %v", err)
 		}
 
-		// Output result as JSON
-		output := map[string]string{
-			"result": result,
-		}
-		jsonOutput, err := json.Marshal(output)
-		if err != nil {
-			log.Fatalf("Failed to marshal output: %v", err)
-		}
-
-		fmt.Println(string(jsonOutput))
+		// Success - no output needed, bash will detect success via exit code
 
 	case "commit-and-finalize":
 		if len(os.Args) < 6 {
@@ -699,7 +740,7 @@ func main() {
 			log.Fatalf("Failed to generate public randomness commitment: %v", err)
 		}
 
-		_, err = submitFinalitySignature(r, contractAddr, randListInfo, fpSk, startHeight)
+		err = submitFinalitySignature(r, contractAddr, randListInfo, fpSk, startHeight)
 		if err != nil {
 			log.Fatalf("Failed to submit finality signature: %v", err)
 		}

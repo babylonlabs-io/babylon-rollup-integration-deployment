@@ -2,7 +2,7 @@
 
 set -e  # Exit on any error
 
-sleep 5 # wait for containers to be ready
+sleep 10 # wait for containers to be ready (cov emulator takes a while to start)
 
 BBN_CHAIN_ID="chain-test"
 CONSUMER_ID="consumer-id"
@@ -196,17 +196,18 @@ fi
 ###############################
 
 echo ""
-echo "🎲 Step 7a: Committing public randomness..."
+echo "🎲 Step 7a: Committing public randomness for large range..."
 
 # Configure parameters for crypto operations
 start_height=1
-num_pub_rand=100
+num_pub_rand=1000  # Commit randomness for 1000 blocks
+num_finality_sigs=10  # Submit finality signatures for first 10 blocks
 
 echo "  → Using crypto-ops to commit randomness..."
 echo "    Start height: $start_height, Number of commitments: $num_pub_rand"
 
 # Step 7a: Commit public randomness and get rand list info
-echo "  → Committing public randomness..."
+echo "  → Committing public randomness for blocks $start_height to $((start_height + num_pub_rand - 1))..."
 rand_list_info_json=$(./crypto-ops commit-pub-rand $consumer_btc_sk $finalityContractAddr $start_height $num_pub_rand)
 
 if [ $? -ne 0 ]; then
@@ -214,24 +215,41 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "  ✅ Public randomness committed successfully!"
+echo "  ✅ Public randomness committed successfully for $num_pub_rand blocks!"
 
 echo ""
-echo "✍️ Step 7b: Submitting finality signature..."
+echo "✍️ Step 7b: Submitting finality signatures in batch..."
 
-# Step 7b: Submit finality signature using the rand list info
-echo "  → Using crypto-ops to submit finality signature..."
-echo "    Finalized height: $start_height"
+# Step 7b: Submit finality signatures for multiple blocks using the rand list info
+echo "  → Using crypto-ops to submit finality signatures for $num_finality_sigs blocks..."
+echo "    Processing blocks $start_height to $((start_height + num_finality_sigs - 1))"
 
-finality_result=$(./crypto-ops submit-finality-sig $consumer_btc_sk $finalityContractAddr "$rand_list_info_json" $start_height)
+# Counter for successful submissions
+successful_sigs=0
 
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to submit finality signature"
-    exit 1
-fi
+# Loop through blocks and submit finality signatures
+for ((block_height=start_height; block_height<start_height+num_finality_sigs; block_height++)); do
+    echo "  → [$((block_height - start_height + 1))/$num_finality_sigs] Submitting finality signature for block $block_height..."
+    
+    echo "$rand_list_info_json" | ./crypto-ops submit-finality-sig $consumer_btc_sk $finalityContractAddr $block_height
+    
+    if [ $? -eq 0 ]; then
+        ((successful_sigs++))
+        echo "    ✅ Block $block_height: Finality signature submitted and verified successfully"
+    else
+        echo "    ❌ Block $block_height: Failed to submit finality signature"
+        echo "  💥 Finality signature submission failed - stopping batch processing"
+        echo "  📊 Final status: $successful_sigs/$num_finality_sigs blocks processed successfully before failure"
+        exit 1
+    fi
+    
+    # Add small delay to avoid overwhelming the system
+    sleep 1
+done
 
-echo "  ✅ Finality signature submitted successfully!"
-echo "  → Result: $(echo "$finality_result" | jq -r '.result')"
+echo ""
+echo "🎉 All $num_finality_sigs finality signatures submitted successfully!"
+echo "  📊 Successfully processed blocks $start_height to $((start_height + num_finality_sigs - 1))"
 
 ###############################
 # Demo Summary                #
@@ -245,5 +263,5 @@ echo "✅ Finality contract deployed: $finalityContractAddr"
 echo "✅ Consumer chain registered: $CONSUMER_ID"
 echo "✅ Finality providers created: $bbn_fp_count Babylon + $consumer_fp_count Consumer"
 echo "✅ BTC delegation active: $btcTxHash ($activeDelegations active)"
-echo "✅ Public randomness committed: $start_height-$((start_height + num_pub_rand - 1))"
-echo "✅ Finality signatures submitted and verified for block height $start_height"
+echo "✅ Public randomness committed: blocks $start_height-$((start_height + num_pub_rand - 1)) ($num_pub_rand total)"
+echo "✅ Finality signatures processed: $successful_sigs/$num_finality_sigs blocks (blocks $start_height-$((start_height + num_finality_sigs - 1)))"
