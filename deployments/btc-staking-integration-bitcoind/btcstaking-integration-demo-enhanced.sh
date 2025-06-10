@@ -196,20 +196,42 @@ fi
 ###############################
 
 echo ""
-echo "🎲✍️ Step 7: Committing public randomness and submitting finality signatures..."
+echo "🎲 Step 7a: Committing public randomness..."
 
 # Configure parameters for crypto operations
 start_height=1
 num_pub_rand=100
 
-echo "  → Using crypto-ops to commit randomness and submit finality signature..."
+echo "  → Using crypto-ops to commit randomness..."
 echo "    Start height: $start_height, Number of commitments: $num_pub_rand"
+
+# Step 7a: Commit public randomness and get rand list info
+echo "  → Committing public randomness..."
+rand_list_info_json=$(./crypto-ops commit-pub-rand $consumer_btc_sk $finalityContractAddr $start_height $num_pub_rand)
+
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to commit public randomness"
+    exit 1
+fi
+
+echo "  ✅ Public randomness committed successfully!"
+
+echo ""
+echo "✍️ Step 7b: Submitting finality signature..."
+
+# Step 7b: Submit finality signature using the rand list info
+echo "  → Using crypto-ops to submit finality signature..."
 echo "    Finalized height: $start_height"
 
-# Single atomic operation: commit pub randomness and submit finality signature
-./crypto-ops commit-and-finalize $consumer_btc_sk $finalityContractAddr $start_height $num_pub_rand
+finality_result=$(./crypto-ops submit-finality-sig $consumer_btc_sk $finalityContractAddr "$rand_list_info_json" $start_height)
 
-echo "  ✅ Public randomness committed and finality signature submitted!"
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to submit finality signature"
+    exit 1
+fi
+
+echo "  ✅ Finality signature submitted successfully!"
+echo "  → Result: $(echo "$finality_result" | jq -r '.result')"
 
 ###############################
 # Demo Summary                #
@@ -224,4 +246,4 @@ echo "✅ Consumer chain registered: $CONSUMER_ID"
 echo "✅ Finality providers created: $bbn_fp_count Babylon + $consumer_fp_count Consumer"
 echo "✅ BTC delegation active: $btcTxHash ($activeDelegations active)"
 echo "✅ Public randomness committed: $start_height-$((start_height + num_pub_rand - 1))"
-echo "✅ Finality signatures submitted and verified"
+echo "✅ Finality signatures submitted and verified for block height $start_height"
