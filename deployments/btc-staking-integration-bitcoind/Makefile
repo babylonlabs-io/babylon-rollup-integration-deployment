@@ -22,16 +22,24 @@ build-covenant-emulator:
 build-covenant-signer:
 	$(MAKE) -C $(GIT_TOPLEVEL)/covenant-emulator/covenant-signer build-docker
 
-build-deployment-btc-staking-integration-bitcoind: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator
+build-tmkms:
+	$(MAKE) -C $(GIT_TOPLEVEL)/contrib/images tmkms
 
-start-deployment-btc-staking-integration-bitcoind: stop-deployment-btc-staking-integration-bitcoind build-deployment-btc-staking-integration-bitcoind
+build-deployment: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator build-tmkms
+
+start-deployment: stop-deployment build-deployment
 	./pre-deployment.sh
 	$(DOCKER) compose -f artifacts/docker-compose.yml up -d
 	./post-deployment.sh
 
-stop-deployment-btc-staking-integration-bitcoind:
+stop-deployment:
 	$(DOCKER) compose -f artifacts/docker-compose.yml down
 	rm -rf $(CURDIR)/.testnets
 
-start-deployment-btc-staking-integration-bitcoind-demo: start-deployment-btc-staking-integration-bitcoind
-	./btcstaking-integration-demo.sh
+run-demo: start-deployment
+	@echo "🚀 Running BTC Staking Integration Demo (Bash + Go Implementation)..."
+	./btcstaking-integration-demo-enhanced.sh
+
+run-demo-only:
+	@echo "🚀 Running BTC Staking Integration Demo (Bash + Go Implementation, assuming deployment is ready)..."
+	./btcstaking-integration-demo-enhanced.sh

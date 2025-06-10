@@ -1,12 +1,11 @@
-start-deployment-btc-staking-integration-bitcoind:
+start-deployment:
 	@$(MAKE) -C $(CURDIR)/deployments/btc-staking-integration-bitcoind \
-		start-deployment-btc-staking-integration-bitcoind
+		start-deployment
 
-start-deployment-btc-staking-integration-bitcoind-demo:
+run-demo:
 	@$(MAKE) -C $(CURDIR)/deployments/btc-staking-integration-bitcoind \
-		NUM_VALIDATORS=${NUM_VALIDATORS} \
-		start-deployment-btc-staking-integration-bitcoind-demo
+		run-demo
 
-stop-deployment-btc-staking-integration-bitcoind:
+stop-deployment:
 	@$(MAKE) -C $(CURDIR)/deployments/btc-staking-integration-bitcoind \
-		stop-deployment-btc-staking-integration-bitcoind
+		stop-deployment
