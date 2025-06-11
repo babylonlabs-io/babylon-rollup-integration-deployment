@@ -3,7 +3,7 @@ go 1.23.1
 module crypto-ops-tool
 
 require (
-	github.com/cometbft/cometbft v0.38.17 // indirect
+	github.com/cometbft/cometbft v0.38.17
 	github.com/cometbft/cometbft-db v0.15.0 // indirect
 	github.com/cosmos/cosmos-sdk v0.50.13
 	github.com/gorilla/mux v1.8.1 // indirect
