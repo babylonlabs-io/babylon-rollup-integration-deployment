@@ -37,7 +37,7 @@ echo "  → Command: $STORE_CMD"
 STORE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$STORE_CMD")
 echo "  → Output: $STORE_OUTPUT"
 
-sleep 5
+sleep 10
 
 echo "  → Instantiating contract..."
 INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"consumer_id\":\"$CONSUMER_ID\",\"is_enabled\":true}"
@@ -46,7 +46,7 @@ echo "  → Command: $INSTANTIATE_CMD"
 INSTANTIATE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$INSTANTIATE_CMD")
 echo "  → Output: $INSTANTIATE_OUTPUT"
 
-sleep 5
+sleep 10
 
 # Extract contract address
 finalityContractAddr=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q wasm list-contracts-by-code 1 --output json | jq -r '.contracts[0]'")
@@ -64,7 +64,7 @@ echo "  → Command: $REGISTER_CMD"
 REGISTER_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$REGISTER_CMD")
 echo "  → Output: $REGISTER_OUTPUT"
 
-sleep 3
+sleep 10
 echo "  ✅ Consumer '$CONSUMER_ID' registered successfully"
 
 ###############################
