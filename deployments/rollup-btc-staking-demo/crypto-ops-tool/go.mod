@@ -1,6 +1,6 @@
 go 1.23.1
 
-module btc-staking-demo
+module crypto-ops-tool
 
 require (
 	github.com/cometbft/cometbft v0.38.17 // indirect

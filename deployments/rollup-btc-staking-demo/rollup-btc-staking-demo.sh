@@ -12,7 +12,7 @@ echo "=================================================="
 
 # Build the crypto operations tool first
 echo "🔧 Building crypto operations tool..."
-cd btc-staking-demo
+cd crypto-ops-tool
 go build -o ../crypto-ops ./cmd/crypto-ops
 cd ../
 echo "  ✅ Crypto operations tool built successfully"
