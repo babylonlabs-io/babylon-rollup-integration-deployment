@@ -108,6 +108,8 @@ echo "  → Creating Babylon Finality Provider..."
 bbn_pop_json=$(./crypto-ops generate-pop $bbn_btc_sk $admin)
 bbn_pop_hex=$(echo "$bbn_pop_json" | jq -r '.pop_hex')
 
+sleep 15
+
 # Create Babylon FP on-chain
 BBN_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $bbn_btc_pk $bbn_pop_hex --from test-spending-key --moniker 'Babylon FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --chain-id $BBN_CHAIN_ID --keyring-backend test --gas-prices=1ubbn --output json -y"
 echo "  → Command: $BBN_FP_CMD"
