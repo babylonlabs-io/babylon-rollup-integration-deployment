@@ -1,51 +1,62 @@
-# BTC staking integration deployment
+# Rollup BTC Staking Demo
 
-This deployment scenario demonstrates the integration of Babylon network with
-BTC Staking and a Consumer chain, using a bitcoind private regtest network.
-It showcases how the Consumer chain integrates with Babylon for BTC staking.
+This deployment demonstrates the integration of Babylon network with rollup chains using BTC staking and smart contracts. It showcases how rollup chains can leverage Babylon's Bitcoin security through finality contracts.
 
 ## Components
 
-1. **Babylon Network**: Two nodes of a private Babylon network.
-2. **BTC Regression Testnet**: A local Bitcoin testnet using bitcoind for
-   testing and development.
-3. **Babylon Finality Provider**: A finality provider on the Babylon chain.
-4. **BTC Staker**: A BTC staker that re-stakes to the Babylon and Consumer
-   finality provider.
-5. **Consumer chain finality provider**: A finality provider on the Consumer
-   chain.
-<!-- 6. TODO -->
+1. **Babylon Network**: Two nodes of a private Babylon network providing Bitcoin security.
+2. **BTC Regression Testnet**: A local Bitcoin testnet for testing and development.
+3. **Babylon Finality Provider**: A finality provider securing the Babylon chain.
+4. **BTC Staker**: Service that stakes BTC to Babylon finality providers.
+5. **Finality Contract**: Smart contract deployed on Babylon that handles rollup finality.
+6. **Crypto Operations Tool**: CLI tool for managing cryptographic operations (key generation, randomness commitment, finality signatures).
 
-## User stories covered
+## Key Features
 
-<!-- 6. TODO -->
+- **Smart Contract Integration**: Uses finality contracts instead of separate consumer chain software
+- **Batch Processing**: Commits randomness for thousands of blocks, then submits finality signatures in batches
+- **Automated Demo**: Complete end-to-end demonstration with retry logic and error handling
+- **Rollup Focus**: Designed specifically for rollup chain integration patterns
 
 ## Usage
 
-### Start the BTC staking integration demo
+### Start the rollup BTC staking demo
 
 ```shell
 git submodule update --init
-make start-deployment-btc-staking-integration-bitcoind-demo
+make run-demo
 ```
 
 This command will:
 
-- Stop any existing deployment.
-- Build all necessary components (babylond, bitcoindsim, vigilante, btc-staker,
-    finality-provider, covenant-emulator).
-- Run the pre-deployment setup.
-- Start the Docker containers.
-- Run the post-deployment setup.
-- Run the demo script that showcases all the user stories.
+- Stop any existing deployment
+- Build all necessary components (babylond, bitcoindsim, vigilante, btc-staker, finality-provider, covenant-emulator)
+- Run the pre-deployment setup
+- Start the Docker containers
+- Run the post-deployment setup
+- Execute the complete rollup BTC staking demo
+
+### Run demo only (assuming deployment is ready)
+
+```shell
+make run-demo-only
+```
 
 ### Stop the deployment
 
 ```shell
-make stop-deployment-btc-staking-integration-bitcoind
+make stop-deployment
 git submodule deinit
 ```
 
-This will stop and remove the Docker containers, and clean up the test network
-data.
-It will also de-initialise / remove the submodules.
+This will stop and remove the Docker containers, clean up the test network data, and de-initialize submodules.
+
+## Demo Flow
+
+1. **Setup**: Deploy finality contract and register consumer chain
+2. **Key Generation**: Create cryptographic keys for finality providers
+3. **Finality Provider Creation**: Register finality providers on-chain
+4. **BTC Delegation**: Stake BTC to the finality providers
+5. **Randomness Commitment**: Commit public randomness for 1000 blocks
+6. **Finality Signatures**: Submit finality signatures for 10 blocks in batch
+7. **Verification**: Verify all operations succeeded with retry logic
