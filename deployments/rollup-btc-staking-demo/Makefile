@@ -37,9 +37,9 @@ stop-deployment:
 	rm -rf $(CURDIR)/.testnets
 
 run-demo: start-deployment
-	@echo "🚀 Running BTC Staking Integration Demo (Bash + Go Implementation)..."
-	./btcstaking-integration-demo-enhanced.sh
+	@echo "🚀 Running Rollup BTC Staking Demo..."
+	./rollup-btc-staking-demo.sh
 
 run-demo-only:
-	@echo "🚀 Running BTC Staking Integration Demo (Bash + Go Implementation, assuming deployment is ready)..."
-	./btcstaking-integration-demo-enhanced.sh
+	@echo "🚀 Running Rollup BTC Staking Demo (assuming deployment is ready)..."
+	./rollup-btc-staking-demo.sh
