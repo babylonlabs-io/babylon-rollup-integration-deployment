@@ -179,7 +179,7 @@ echo "  → Monitoring delegation status..."
 for i in {1..30}; do
     activeDelegations=$(docker exec babylondnode0 /bin/sh -c 'babylond q btcstaking btc-delegations active -o json | jq ".btc_delegations | length"')
     
-    if [ "$activeDelegations" -eq 2 ]; then
+    if [ "$activeDelegations" -eq 1 ]; then
         echo "  ✅ Delegation activated successfully!"
         break
     fi
@@ -264,103 +264,112 @@ echo "  → Verification result: $VERIFY_OUTPUT"
 
 echo "  ✅ Public randomness committed successfully for $num_pub_rand blocks!"
 
-# TODO: Uncomment finality signature section once pub randomness commitment is working
-# echo ""
-# echo "✍️ Step 7b: Generating and submitting finality signatures..."
+echo ""
+echo "✍️ Step 7b: Generating and submitting finality signatures..."
 
-# # Step 7b: Generate and submit finality signatures for multiple blocks
-# echo "  → Processing $num_finality_sigs blocks using crypto-only approach..."
-# echo "    Processing blocks $start_height to $((start_height + num_finality_sigs - 1))"
+# Step 7b: Generate and submit finality signatures for multiple blocks
+echo "  → Processing $num_finality_sigs blocks using crypto-only approach..."
+echo "    Processing blocks $start_height to $((start_height + num_finality_sigs - 1))"
 
-# # Counter for successful submissions
-# successful_sigs=0
+# Counter for successful submissions
+successful_sigs=0
 
-# # Loop through blocks and generate + submit finality signatures
-# for ((block_height=start_height; block_height<start_height+num_finality_sigs; block_height++)); do
-#     echo "  → [$((block_height - start_height + 1))/$num_finality_sigs] Processing block $block_height..."
+# Loop through blocks and generate + submit finality signatures
+for ((block_height=start_height; block_height<start_height+num_finality_sigs; block_height++)); do
+    echo "  → [$((block_height - start_height + 1))/$num_finality_sigs] Processing block $block_height..."
     
-#     # Generate a mock block hash for this height (32 random bytes in hex)
-#     block_hash=$(openssl rand -hex 32)
-#     echo "    Mock block hash: $block_hash"
+    # Generate finality signature using crypto-only command (block hash generated internally)
+    echo "    → Generating finality signature (crypto-only)..."
+    finality_sig_data=$(echo "$rand_list_info_json" | ./crypto-ops generate-finality-sig $consumer_btc_sk $block_height)
     
-#     # Generate finality signature using crypto-only command
-#     echo "    → Generating finality signature (crypto-only)..."
-#     finality_sig_data=$(echo "$rand_list_info_json" | ./crypto-ops generate-finality-sig $consumer_btc_sk $block_height $block_hash)
+    if [ $? -ne 0 ]; then
+        echo "    ❌ Block $block_height: Failed to generate finality signature"
+        echo "  💥 Finality signature generation failed - stopping batch processing"
+        echo "  📊 Final status: $successful_sigs/$num_finality_sigs blocks processed successfully before failure"
+        exit 1
+    fi
     
-#     if [ $? -ne 0 ]; then
-#         echo "    ❌ Block $block_height: Failed to generate finality signature"
-#         echo "  💥 Finality signature generation failed - stopping batch processing"
-#         echo "  📊 Final status: $successful_sigs/$num_finality_sigs blocks processed successfully before failure"
-#         exit 1
-#     fi
+    # Extract signature data from JSON response (using proper JSON handling)
+    sig_fp_pubkey_hex=$(echo "$finality_sig_data" | jq -r '.fp_pubkey_hex')
+    sig_height=$(echo "$finality_sig_data" | jq -r '.height')
+    sig_pub_rand=$(echo "$finality_sig_data" | jq -c '.pub_rand')          # Keep as JSON array
+    sig_proof=$(echo "$finality_sig_data" | jq -c '.proof')                # Keep as JSON object
+    sig_block_hash=$(echo "$finality_sig_data" | jq -c '.block_hash')      # Keep as JSON array
+    sig_signature=$(echo "$finality_sig_data" | jq -c '.signature')        # Keep as JSON array
     
-#     # Extract signature data from JSON response
-#     sig_fp_pubkey_hex=$(echo "$finality_sig_data" | jq -r '.fp_pubkey_hex')
-#     sig_height=$(echo "$finality_sig_data" | jq -r '.height')
-#     sig_pub_rand=$(echo "$finality_sig_data" | jq -r '.pub_rand')
-#     sig_proof=$(echo "$finality_sig_data" | jq -r '.proof')
-#     sig_block_hash=$(echo "$finality_sig_data" | jq -r '.block_hash')
-#     sig_signature=$(echo "$finality_sig_data" | jq -r '.signature')
+    echo "    → Submitting finality signature to contract..."
     
-#     echo "    → Submitting finality signature to contract..."
+    # Create finality signature message for the contract
+    finality_msg=$(jq -n \
+      --arg fp_pubkey_hex "$sig_fp_pubkey_hex" \
+      --argjson height "$sig_height" \
+      --argjson pub_rand "$sig_pub_rand" \
+      --argjson proof "$sig_proof" \
+      --argjson block_hash "$sig_block_hash" \
+      --argjson signature "$sig_signature" \
+      '{
+        submit_finality_signature: {
+          fp_pubkey_hex: $fp_pubkey_hex,
+          height: $height,
+          pub_rand: $pub_rand,
+          proof: $proof,
+          block_hash: $block_hash,
+          signature: $signature
+        }
+      }')
     
-#     # Create finality signature message for the contract
-#     finality_msg=$(jq -n \
-#       --arg fp_pubkey_hex "$sig_fp_pubkey_hex" \
-#       --argjson height "$sig_height" \
-#       --argjson pub_rand "$sig_pub_rand" \
-#       --argjson proof "$sig_proof" \
-#       --argjson block_hash "$sig_block_hash" \
-#       --argjson signature "$sig_signature" \
-#       '{
-#         submit_finality_signature: {
-#           fp_pubkey_hex: $fp_pubkey_hex,
-#           height: $height,
-#           pub_rand: $pub_rand,
-#           proof: $proof,
-#           block_hash: $block_hash,
-#           signature: $signature
-#         }
-#       }')
+    # Submit to finality contract using wasm execute
+    FINALITY_CMD="/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$finality_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas 500000 --fees 100000ubbn -y --output json"
+    FINALITY_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$FINALITY_CMD")
+    echo "    → Submission result: $FINALITY_OUTPUT"
     
-#     # Submit to finality contract using wasm execute
-#     FINALITY_CMD="/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$finality_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas 500000 --fees 100000ubbn -y --output json"
-#     FINALITY_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$FINALITY_CMD")
-#     echo "    → Submission result: $FINALITY_OUTPUT"
+    # Verify the signature was recorded
+    sleep 8  # Increased delay for transaction processing
+    echo "    → Verifying finality signature was recorded..."
     
-#     # Verify the signature was recorded
-#     sleep 3
-#     echo "    → Verifying finality signature was recorded..."
-#     verify_msg=$(jq -n --argjson height "$sig_height" --arg hash "$block_hash" '{block_voters: {height: $height, hash: $hash}}')
-#     VERIFY_SIG_CMD="/bin/babylond --home /babylondhome q wasm contract-state smart $finalityContractAddr '$verify_msg' --output json"
-#     VERIFY_SIG_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$VERIFY_SIG_CMD")
+    # Use the hex string directly from Go output (much simpler!)
+    block_hash_hex=$(echo "$finality_sig_data" | jq -r '.block_hash_hex')
     
-#     # Check if our FP is in the voters list
-#     if echo "$VERIFY_SIG_OUTPUT" | jq -r '.data[]' | grep -q "$sig_fp_pubkey_hex"; then
-#         ((successful_sigs++))
-#         echo "    ✅ Block $block_height: Finality signature submitted and verified successfully"
-#     else
-#         echo "    ❌ Block $block_height: Finality signature verification failed"
-#         echo "    → Verification output: $VERIFY_SIG_OUTPUT"
-#         echo "  💥 Finality signature verification failed - stopping batch processing"
-#         echo "  📊 Final status: $successful_sigs/$num_finality_sigs blocks processed successfully before failure"
-#         exit 1
-#     fi
+    # Retry verification up to 5 times with delays
+    verification_success=false
+    for verification_attempt in {1..5}; do
+        echo "    → Verification attempt $verification_attempt/5..."
+        verify_msg=$(jq -n --argjson height "$sig_height" --arg hash "$block_hash_hex" '{block_voters: {height: $height, hash: $hash}}')
+        VERIFY_SIG_CMD="/bin/babylond --home /babylondhome q wasm contract-state smart $finalityContractAddr '$verify_msg' --output json"
+        VERIFY_SIG_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$VERIFY_SIG_CMD")
+        
+        # Check if data is not null and contains our FP
+        if echo "$VERIFY_SIG_OUTPUT" | jq -e '.data != null' >/dev/null && echo "$VERIFY_SIG_OUTPUT" | jq -r '.data[]' | grep -q "$sig_fp_pubkey_hex"; then
+            verification_success=true
+            echo "    ✅ Verification succeeded on attempt $verification_attempt"
+            break
+        else
+            echo "    → Attempt $verification_attempt failed, data: $(echo "$VERIFY_SIG_OUTPUT" | jq -r '.data')"
+            if [ $verification_attempt -lt 5 ]; then
+                echo "    → Waiting 5 seconds before retry..."
+                sleep 5
+            fi
+        fi
+    done
     
-#     # Add small delay to avoid overwhelming the system
-#     sleep 1
-# done
-
-# echo ""
-# echo "🎉 All $num_finality_sigs finality signatures processed successfully!"
-# echo "  📊 Successfully processed blocks $start_height to $((start_height + num_finality_sigs - 1))"
+    if [ "$verification_success" = false ]; then
+        echo "    ❌ Block $block_height: Finality signature verification failed"
+        echo "    → Verification output: $VERIFY_SIG_OUTPUT"
+        echo "  💥 Finality signature verification failed - stopping batch processing"
+        echo "  📊 Final status: $successful_sigs/$num_finality_sigs blocks processed successfully before failure"
+        exit 1
+    else
+        ((successful_sigs++))
+        echo "    ✅ Block $block_height: Finality signature submitted and verified successfully"
+    fi
+    
+    # Add small delay to avoid overwhelming the system
+    sleep 2  # Reduced since we have longer delays in verification
+done
 
 echo ""
-echo "🎯 Step 7b: Finality signatures section commented out for testing"
-echo "  → Once public randomness commitment works, we'll uncomment this section"
-
-# Temporary successful_sigs for summary
-successful_sigs=0
+echo "🎉 All $num_finality_sigs finality signatures processed successfully!"
+echo "  📊 Successfully processed blocks $start_height to $((start_height + num_finality_sigs - 1))"
 
 ###############################
 # Demo Summary                #

@@ -577,7 +577,7 @@ Commands:
   
   # Crypto-only operations (recommended)
   generate-pub-rand-commitment <private_key_hex> <start_height> <num_pub_rand> - Generate randomness and commitment data (crypto only)
-  generate-finality-sig <private_key_hex> <block_height> <block_hash_hex> - Generate finality signature (crypto only, reads rand_list_info_json from stdin)
+  generate-finality-sig <private_key_hex> <block_height> - Generate finality signature (crypto only, reads rand_list_info_json from stdin)
   
   # Legacy combined operations (crypto + chain submission)
   commit-pub-rand <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Commit pub randomness only
@@ -588,7 +588,7 @@ Examples:
   %s generate-keypair
   %s generate-pop abc123... bbn1...
   %s generate-pub-rand-commitment abc123... 1 100
-  echo '{...randListInfoJson...}' | %s generate-finality-sig abc123... 1 abc123...
+  echo '{...randListInfoJson...}' | %s generate-finality-sig abc123... 1
   %s commit-pub-rand abc123... bbn1contract... 1 100
   echo '{...randListInfoJson...}' | %s submit-finality-sig abc123... bbn1contract... 1
   %s commit-and-finalize abc123... bbn1contract... 1 100
@@ -735,7 +735,7 @@ func main() {
 		fmt.Println(string(jsonOutput))
 
 	case "generate-finality-sig":
-		if len(os.Args) < 5 {
+		if len(os.Args) < 4 {
 			fmt.Println("Error: Missing arguments for generate-finality-sig")
 			printUsage()
 			os.Exit(1)
@@ -743,7 +743,6 @@ func main() {
 
 		privKeyHex := os.Args[2]
 		blockHeightStr := os.Args[3]
-		blockHashHex := os.Args[4]
 
 		// Parse the private key
 		privKeyBytes, err := hex.DecodeString(privKeyHex)
@@ -759,11 +758,8 @@ func main() {
 			log.Fatalf("Invalid block height: %v", err)
 		}
 
-		// Parse block hash
-		blockHash, err := hex.DecodeString(blockHashHex)
-		if err != nil {
-			log.Fatalf("Invalid block hash hex: %v", err)
-		}
+		// Generate random block hash internally (like submitFinalitySignature does)
+		blockHash := datagen.GenRandomByteArray(r, 32)
 
 		// Read randListInfo from stdin instead of command line to avoid "Argument list too long"
 		fmt.Fprintln(os.Stderr, "  → Reading randomness data from stdin...")
@@ -801,8 +797,9 @@ func main() {
 				"leaf_hash": protoProof.LeafHash,
 				"aunts":     protoProof.Aunts,
 			},
-			"block_hash": blockHash,
-			"signature":  signature,
+			"block_hash":     blockHash,                     // Byte array for contract submission
+			"block_hash_hex": hex.EncodeToString(blockHash), // Hex string for verification query
+			"signature":      signature,
 		}
 
 		jsonOutput, err := json.Marshal(output)
