@@ -179,20 +179,6 @@ services:
       - babylondnode0
     restart: unless-stopped
 
-  consumer-fp:
-    container_name: consumer-fp
-    image: babylonlabs-io/finality-provider
-    command: fpd start
-    networks:
-      localnet:
-        ipv4_address: 192.168.10.13
-    volumes:
-      - ../.testnets/consumer-fp:/home/finality-provider/.fpd
-    depends_on:
-      - babylondnode0
-      - consumer-eotsmanager
-    restart: unless-stopped
-
   eotsmanager:
     container_name: eotsmanager
     image: babylonlabs-io/finality-provider
@@ -204,19 +190,6 @@ services:
       - "15825:15813"
     volumes:
       - ../.testnets/eotsmanager:/home/finality-provider/.eotsd
-    depends_on:
-      - babylondnode0
-    restart: unless-stopped
-
-  consumer-eotsmanager:
-    container_name: consumer-eotsmanager
-    image: babylonlabs-io/finality-provider
-    command: eotsd start
-    networks:
-      localnet:
-        ipv4_address: 192.168.10.15
-    volumes:
-      - ../.testnets/consumer-eotsmanager:/home/finality-provider/.eotsd
     depends_on:
       - babylondnode0
     restart: unless-stopped

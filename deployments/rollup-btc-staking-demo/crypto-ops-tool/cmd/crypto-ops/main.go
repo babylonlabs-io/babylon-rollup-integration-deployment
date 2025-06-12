@@ -507,12 +507,79 @@ func verifyFinalitySignature(contractAddr string, blockHeight uint64, blockAppHa
 	return nil
 }
 
+// Generate public randomness and commitment (crypto only, no chain submission)
+func generatePublicRandomnessCommitment(r *mathrand.Rand, consumerFpSk *btcec.PrivateKey, startHeight, numPubRand uint64) (*datagen.RandListInfo, *bbn.BIP340PubKey, []byte, error) {
+	fmt.Fprintln(os.Stderr, "  → Generating public randomness list...")
+
+	// Follow exact test pattern: btcPK -> bip340PK -> MarshalHex()
+	btcPK := consumerFpSk.PubKey()
+	bip340PK := bbn.NewBIP340PubKeyFromBTCPK(btcPK)
+
+	// Generate the message exactly like datagen.GenRandomMsgCommitPubRandList
+	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, consumerFpSk, startHeight, numPubRand)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to generate public randomness list: %v", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "  → Generated %d public randomness values starting at height %d\n", numPubRand, startHeight)
+
+	// Return the randomness info, public key, and signature for bash script to submit
+	signature := msgCommitPubRandList.Sig.MustToBTCSig().Serialize()
+	return randListInfo, bip340PK, signature, nil
+}
+
+// Generate finality signature (crypto only, no chain submission)
+func generateFinalitySignature(r *mathrand.Rand, randListInfo *datagen.RandListInfo, consumerFpSk *btcec.PrivateKey, blockHeight uint64, blockHash []byte) (*bbn.BIP340PubKey, []byte, []byte, *merkle.Proof, error) {
+	fmt.Fprintln(os.Stderr, "  → Generating finality signature...")
+
+	// Follow exact test pattern: btcPK -> bip340PK -> MarshalHex()
+	btcPK := consumerFpSk.PubKey()
+	bip340PK := bbn.NewBIP340PubKeyFromBTCPK(btcPK)
+
+	fmt.Fprintf(os.Stderr, "  → Block: height=%d, hash=%x\n", blockHeight, blockHash)
+
+	// Create message to sign (exactly like the tests)
+	msgToSign := append(sdk.Uint64ToBigEndian(blockHeight), blockHash...)
+
+	// Calculate randomness index (assuming randomness starts from height 1)
+	if blockHeight < 1 {
+		return nil, nil, nil, nil, fmt.Errorf("block height must be >= 1, got %d", blockHeight)
+	}
+	randIndex := int(blockHeight - 1)
+	if randIndex >= len(randListInfo.SRList) {
+		return nil, nil, nil, nil, fmt.Errorf("block height %d requires randomness index %d, but only %d randomness values available", blockHeight, randIndex, len(randListInfo.SRList))
+	}
+
+	// Generate EOTS signature using the calculated randomness index
+	fmt.Fprintf(os.Stderr, "  → Generating EOTS signature using randomness index %d for height %d...\n", randIndex, blockHeight)
+	sig, err := eots.Sign(consumerFpSk, randListInfo.SRList[randIndex], msgToSign)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to generate EOTS signature: %v", err)
+	}
+	eotsSig := bbn.NewSchnorrEOTSSigFromModNScalar(sig)
+
+	// Return all the components needed for bash script to submit
+	publicRandomness := randListInfo.PRList[randIndex].MustMarshal()
+	signature := eotsSig.MustMarshal()
+	proof := randListInfo.ProofList[randIndex]
+
+	fmt.Fprintf(os.Stderr, "  ✅ Finality signature generated for block height %d using randomness index %d\n", blockHeight, randIndex)
+
+	return bip340PK, publicRandomness, signature, proof, nil
+}
+
 func printUsage() {
 	fmt.Printf(`Usage: %s <command> [args...]
 
 Commands:
   generate-keypair                                      - Generate a new BTC key pair
   generate-pop <private_key_hex> <babylon_address>      - Generate Proof of Possession for FP creation
+  
+  # Crypto-only operations (recommended)
+  generate-pub-rand-commitment <private_key_hex> <start_height> <num_pub_rand> - Generate randomness and commitment data (crypto only)
+  generate-finality-sig <private_key_hex> <block_height> - Generate finality signature (crypto only, reads rand_list_info_json from stdin)
+  
+  # Legacy combined operations (crypto + chain submission)
   commit-pub-rand <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Commit pub randomness only
   submit-finality-sig <private_key_hex> <contract_addr> <block_height> - Submit finality signature only (reads rand_list_info_json from stdin)
   commit-and-finalize <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Commit pub randomness and submit finality signature (legacy)
@@ -520,13 +587,15 @@ Commands:
 Examples:
   %s generate-keypair
   %s generate-pop abc123... bbn1...
+  %s generate-pub-rand-commitment abc123... 1 100
+  echo '{...randListInfoJson...}' | %s generate-finality-sig abc123... 1
   %s commit-pub-rand abc123... bbn1contract... 1 100
   echo '{...randListInfoJson...}' | %s submit-finality-sig abc123... bbn1contract... 1
   %s commit-and-finalize abc123... bbn1contract... 1 100
   
 Output: All commands output JSON that can be parsed by bash scripts
   
-`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 func main() {
@@ -600,6 +669,140 @@ func main() {
 		}
 
 		jsonOutput, err := json.Marshal(pop)
+		if err != nil {
+			log.Fatalf("Failed to marshal output: %v", err)
+		}
+
+		fmt.Println(string(jsonOutput))
+
+	case "generate-pub-rand-commitment":
+		if len(os.Args) < 5 {
+			fmt.Println("Error: Missing arguments for generate-pub-rand-commitment")
+			printUsage()
+			os.Exit(1)
+		}
+
+		privKeyHex := os.Args[2]
+		startHeightStr := os.Args[3]
+		numPubRandStr := os.Args[4]
+
+		// Parse the private key
+		privKeyBytes, err := hex.DecodeString(privKeyHex)
+		if err != nil {
+			log.Fatalf("Invalid private key hex: %v", err)
+		}
+
+		fpSk, _ := btcec.PrivKeyFromBytes(privKeyBytes)
+
+		// Parse start height and num pub rand
+		startHeight, err := strconv.ParseUint(startHeightStr, 10, 64)
+		if err != nil {
+			log.Fatalf("Invalid start height: %v", err)
+		}
+
+		numPubRand, err := strconv.ParseUint(numPubRandStr, 10, 64)
+		if err != nil {
+			log.Fatalf("Invalid num pub rand: %v", err)
+		}
+
+		// Generate crypto data only
+		randListInfo, bip340PK, signature, err := generatePublicRandomnessCommitment(r, fpSk, startHeight, numPubRand)
+		if err != nil {
+			log.Fatalf("Failed to generate public randomness commitment: %v", err)
+		}
+
+		// Convert to serializable format
+		serializable, err := ConvertToSerializable(randListInfo)
+		if err != nil {
+			log.Fatalf("Failed to convert randListInfo to serializable: %v", err)
+		}
+
+		// Create output with all data needed for bash submission
+		output := map[string]interface{}{
+			"rand_list_info": serializable,
+			"fp_pubkey_hex":  bip340PK.MarshalHex(),
+			"start_height":   startHeight,
+			"num_pub_rand":   numPubRand,
+			"commitment":     randListInfo.Commitment,
+			"signature":      signature,
+		}
+
+		jsonOutput, err := json.Marshal(output)
+		if err != nil {
+			log.Fatalf("Failed to marshal output: %v", err)
+		}
+
+		fmt.Println(string(jsonOutput))
+
+	case "generate-finality-sig":
+		if len(os.Args) < 4 {
+			fmt.Println("Error: Missing arguments for generate-finality-sig")
+			printUsage()
+			os.Exit(1)
+		}
+
+		privKeyHex := os.Args[2]
+		blockHeightStr := os.Args[3]
+
+		// Parse the private key
+		privKeyBytes, err := hex.DecodeString(privKeyHex)
+		if err != nil {
+			log.Fatalf("Invalid private key hex: %v", err)
+		}
+
+		fpSk, _ := btcec.PrivKeyFromBytes(privKeyBytes)
+
+		// Parse block height
+		blockHeight, err := strconv.ParseUint(blockHeightStr, 10, 64)
+		if err != nil {
+			log.Fatalf("Invalid block height: %v", err)
+		}
+
+		// Generate random block hash internally (like submitFinalitySignature does)
+		blockHash := datagen.GenRandomByteArray(r, 32)
+
+		// Read randListInfo from stdin instead of command line to avoid "Argument list too long"
+		fmt.Fprintln(os.Stderr, "  → Reading randomness data from stdin...")
+		stdinBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatalf("Failed to read from stdin: %v", err)
+		}
+
+		// Parse randListInfo
+		var serializable SerializableRandListInfo
+		if err := json.Unmarshal(stdinBytes, &serializable); err != nil {
+			log.Fatalf("Failed to parse randListInfo: %v", err)
+		}
+
+		randListInfo, err := ConvertFromSerializable(&serializable)
+		if err != nil {
+			log.Fatalf("Failed to convert serializable to randListInfo: %v", err)
+		}
+
+		// Generate finality signature (crypto only)
+		bip340PK, publicRandomness, signature, proof, err := generateFinalitySignature(r, randListInfo, fpSk, blockHeight, blockHash)
+		if err != nil {
+			log.Fatalf("Failed to generate finality signature: %v", err)
+		}
+
+		// Create output with all data needed for bash submission
+		protoProof := proof.ToProto()
+		output := map[string]interface{}{
+			"fp_pubkey_hex": bip340PK.MarshalHex(),
+			"height":        blockHeight,
+			"pub_rand":      publicRandomness,
+			"proof": map[string]interface{}{
+				"total":     uint64(protoProof.Total),
+				"index":     uint64(protoProof.Index),
+				"leaf_hash": protoProof.LeafHash,
+				"aunts":     protoProof.Aunts,
+			},
+			"block_hash":     blockHash,                     // Byte array for contract submission
+			"block_hash_hex": hex.EncodeToString(blockHash), // Hex string for verification query
+			"signature":      signature,
+		}
+
+		jsonOutput, err := json.Marshal(output)
 		if err != nil {
 			log.Fatalf("Failed to marshal output: %v", err)
 		}

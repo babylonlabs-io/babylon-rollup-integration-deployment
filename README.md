@@ -18,7 +18,7 @@ This repository contains artifacts and instructions for setting up and running a
 
 Scenarios are located in the [deployments](deployments/) directory:
 
-- [BTC Staking Integration (bitcoind backend)](deployments/btc-staking-integration-bitcoind): Babylon network with BTC Staking and Timestamping, using a bitcoind-based BTC regression testnet.
+- [Rollup BTC Staking Demo](deployments/rollup-btc-staking-demo): Babylon network with BTC Staking integration for rollup chains using smart contracts.
 - [Finality Gadget Integration with OP chain]: The guides linked below provide instructions on how to integrate the Babylon Bitcoin Staking protocol with an OP-Stack chain:
   - [Deploy an OP-Stack Chain with finality gadget](https://github.com/Snapchain/op-chain-deployment)
   - [Integrate finality gadget into your OP-Stack Chain](https://github.com/Snapchain/babylon-deployment)
