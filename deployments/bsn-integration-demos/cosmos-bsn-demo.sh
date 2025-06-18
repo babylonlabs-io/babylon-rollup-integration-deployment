@@ -4,8 +4,8 @@ set -e  # Exit on any error
 
 BBN_CHAIN_ID="chain-test"
 
-echo "🚀 Starting BTC Staking Integration Demo"
-echo "=============================================="
+echo "🚀 Starting Cosmos BSN Demo"
+echo "=================================================="
 
 echo ""
 echo "⏳ Step 1: Waiting for relayer key recovery..."
