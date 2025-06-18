@@ -36,10 +36,10 @@ stop-deployment:
 	$(DOCKER) compose -f artifacts/docker-compose.yml down
 	rm -rf $(CURDIR)/.testnets
 
-run-demo: start-deployment
-	@echo "🚀 Running Rollup BTC Staking Demo..."
-	./rollup-btc-staking-demo.sh
+run-cosmos-demo: start-deployment
+	@echo "🚀 Running Cosmos BSN Demo..."
+	./cosmos-bsn-demo.sh
 
-run-demo-only:
-	@echo "🚀 Running Rollup BTC Staking Demo (assuming deployment is ready)..."
-	./rollup-btc-staking-demo.sh
+run-rollup-demo: start-deployment
+	@echo "🚀 Running Rollup BSN Demo..."
+	./rollup-bsn-demo.sh
