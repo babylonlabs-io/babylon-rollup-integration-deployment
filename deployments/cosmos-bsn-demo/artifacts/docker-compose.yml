@@ -15,7 +15,7 @@ services:
     container_name: babylondnode0
     image: "babylonlabs-io/babylond"
     command: >
-      babylond --home /babylondhome start --log_level trace --trace --log_format 'plain' 2>&1 | tee /babylondhome/babylond.log
+      babylond --home /babylondhome start --log_format 'plain' 2>&1 | tee /babylondhome/babylond.log
     cap_add:
       - SYS_PTRACE
     security_opt:
@@ -40,13 +40,13 @@ services:
     container_name: babylondnode1
     image: "babylonlabs-io/babylond"
     command: >
-      babylond --home /babylondhome start --log_level trace --trace --log_format 'plain' 2>&1 | tee /babylondhome/babylond.log
+      babylond --home /babylondhome start --log_format 'plain' 2>&1 | tee /babylondhome/babylond.log
     cap_add:
       - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
     environment:
-      - BABYLON_BLS_PASSWORD=password      
+      - BABYLON_BLS_PASSWORD=password
     ports:
       - "26666-26667:26656-26657"
       - "1318:1317"
@@ -154,7 +154,7 @@ services:
         ipv4_address: 192.168.10.11
     environment:
       - BTCSTAKER_USERNAME=rpcuser
-      - BTCSTAKER_PASSWORD=rpcpass        
+      - BTCSTAKER_PASSWORD=rpcpass
     volumes:
       - ../.testnets/btc-staker:/home/btcstaker/.stakerd
     ports:
@@ -179,6 +179,21 @@ services:
       - babylondnode0
     restart: unless-stopped
 
+  consumer-fp:
+    container_name: consumer-fp
+    image: babylonlabs-io/finality-provider
+    command: fpd start
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.13
+    volumes:
+      - ../.testnets/consumer-fp:/home/finality-provider/.fpd
+    depends_on:
+      - babylondnode0
+      - consumer-eotsmanager
+      - ibcsim-bcd
+    restart: unless-stopped
+
   eotsmanager:
     container_name: eotsmanager
     image: babylonlabs-io/finality-provider
@@ -190,6 +205,19 @@ services:
       - "15825:15813"
     volumes:
       - ../.testnets/eotsmanager:/home/finality-provider/.eotsd
+    depends_on:
+      - babylondnode0
+    restart: unless-stopped
+
+  consumer-eotsmanager:
+    container_name: consumer-eotsmanager
+    image: babylonlabs-io/finality-provider
+    command: eotsd start
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.15
+    volumes:
+      - ../.testnets/consumer-eotsmanager:/home/finality-provider/.eotsd
     depends_on:
       - babylondnode0
     restart: unless-stopped
@@ -219,6 +247,25 @@ services:
     depends_on:
       - babylondnode0
       - covenant-signer
+    restart: unless-stopped
+
+  ibcsim-bcd:
+    container_name: ibcsim-bcd
+    image: babylonlabs-io/ibcsim-bcd
+    ports:
+      - "5183:5183"
+      - "26676-26677:26656-26657"
+      - "1319:1317"
+      - "9092:9090"
+      - "2347:2345"
+    volumes:
+      - ../.testnets:/data:Z
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.20
+    depends_on:
+      - babylondnode0
+      - babylondnode1
     restart: unless-stopped
 
   electrs:
@@ -254,7 +301,6 @@ services:
         "--cors", "*",
         "--timestamp"
       ]
-
 
 networks:
   localnet:
