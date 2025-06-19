@@ -56,10 +56,10 @@ COPY --from=build-env /go/bin/bcd /usr/bin/bcd
 WORKDIR /ibcsim-bcd
 COPY wrapper.sh /ibcsim-bcd/wrapper.sh
 COPY setup-bcd.sh /ibcsim-bcd/setup-bcd.sh
-COPY babylon_contract.wasm /ibcsim-bcd/babylon_contract.wasm
-COPY btc_light_client.wasm /ibcsim-bcd/btc_light_client.wasm
-COPY btc_staking.wasm /ibcsim-bcd/btc_staking.wasm
-COPY btc_finality.wasm /ibcsim-bcd/btc_finality.wasm
+COPY --from=build-env /work/babylon-sdk/tests/testdata/babylon_contract.wasm /ibcsim-bcd/babylon_contract.wasm
+COPY --from=build-env /work/babylon-sdk/tests/testdata/btc_light_client.wasm /ibcsim-bcd/btc_light_client.wasm
+COPY --from=build-env /work/babylon-sdk/tests/testdata/btc_staking.wasm /ibcsim-bcd/btc_staking.wasm
+COPY --from=build-env /work/babylon-sdk/tests/testdata/btc_finality.wasm /ibcsim-bcd/btc_finality.wasm
 
 ENV BABYLON_HOME=/data/node1/babylond
 ENV BABYLON_NODE_RPC="http://babylondnode1:26657"
