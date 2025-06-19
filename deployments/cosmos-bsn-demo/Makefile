@@ -4,6 +4,9 @@ GIT_TOPLEVEL := $(shell git rev-parse --show-toplevel)
 build-bitcoindsim:
 	$(MAKE) -C $(GIT_TOPLEVEL)/contrib/images bitcoindsim
 
+build-ibcsim-bcd:
+	$(MAKE) -C $(GIT_TOPLEVEL)/contrib/images ibcsim-bcd
+
 build-babylond:
 	$(MAKE) -C $(GIT_TOPLEVEL)/babylon/contrib/images babylond
 
@@ -25,9 +28,9 @@ build-covenant-signer:
 build-tmkms:
 	$(MAKE) -C $(GIT_TOPLEVEL)/contrib/images tmkms
 
-build-deployment: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator build-tmkms
+build-deployment: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator build-ibcsim-bcd build-tmkms
 
-start-deployment: stop-deployment build-deployment
+start-deployment: stop-deployment #build-deployment
 	./pre-deployment.sh
 	$(DOCKER) compose -f artifacts/docker-compose.yml up -d
 	./post-deployment.sh
