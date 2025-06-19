@@ -27,7 +27,7 @@ build-tmkms:
 
 build-deployment: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator build-tmkms
 
-start-deployment: stop-deployment build-deployment
+start-deployment: stop-deployment #build-deployment
 	./pre-deployment.sh
 	$(DOCKER) compose -f artifacts/docker-compose.yml up -d
 	./post-deployment.sh
@@ -36,10 +36,6 @@ stop-deployment:
 	$(DOCKER) compose -f artifacts/docker-compose.yml down
 	rm -rf $(CURDIR)/.testnets
 
-run-cosmos-demo: start-deployment
-	@echo "🚀 Running Cosmos BSN Demo..."
-	./cosmos-bsn-demo.sh
-
-run-rollup-demo: start-deployment
+run-demo: start-deployment
 	@echo "🚀 Running Rollup BSN Demo..."
-	./rollup-bsn-demo.sh
+	./demo.sh
